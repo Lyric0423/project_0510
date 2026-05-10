@@ -63,6 +63,7 @@ const state = {
   selectedQuestion: null,
   practiceRecords: [],
   interview: null,
+  interviewNotes: [],
   history: [],
   voiceConfig: null,
 };
@@ -78,6 +79,8 @@ let activeRecognition = null;
 let activeRecognitionSession = null;
 let toastTimer = null;
 let audioContext = null;
+let ttsAudio = null;
+let candidateCameraStream = null;
 let pdfJsReady = null;
 let tesseractReady = null;
 
@@ -149,6 +152,14 @@ function bindEvents() {
   $("#submitInterviewAnswerBtn").addEventListener("click", submitInterviewAnswer);
   $("#interviewHintBtn").addEventListener("click", showInterviewHint);
   $("#interviewRecordBtn").addEventListener("click", () => toggleVoiceInput("#interviewAnswer", "#interviewRecordBtn"));
+  $("#cameraToggleBtn").addEventListener("click", toggleCandidateCamera);
+  $("#notesToolBtn").addEventListener("click", () => activateSidePanel("notes"));
+  $("#settingsToolBtn").addEventListener("click", () => activateSidePanel("settings"));
+  $("#saveInterviewNoteBtn").addEventListener("click", saveInterviewNote);
+  $("#answerHeightSelect").addEventListener("change", updateAnswerDockDensity);
+  $$("[data-side-tab]").forEach((button) => {
+    button.addEventListener("click", () => activateSidePanel(button.dataset.sideTab));
+  });
   $("#clearHistoryBtn").addEventListener("click", clearHistory);
 }
 
@@ -508,8 +519,8 @@ async function generateWorkspace() {
     return;
   }
 
-  showToast("正在生成诊断和题库。若未配置大模型，将使用本地规则。");
-  const aiResult = await callAiTask("diagnoseAndQuestions", { materials });
+  showToast("正在生成诊断和题库。若 DeepSeek 不可用，将使用本地规则。");
+  const aiResult = await callAiTask("diagnoseAndQuestions", { materials }, "题库生成已使用本地规则兜底。");
   const localDiagnosis = analyzeMaterials(materials);
   state.diagnosis = normalizeDiagnosis(aiResult?.diagnosis, localDiagnosis);
   state.questionBank = normalizeQuestionBank(aiResult?.questionBank, materials, state.diagnosis);
@@ -531,17 +542,24 @@ async function generateWorkspace() {
   showView("diagnosis");
 }
 
-async function callAiTask(task, payload) {
+async function callAiTask(task, payload, fallbackMessage = "已使用本地规则兜底。") {
   try {
     const response = await fetch("/api/ai/task", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ task, payload }),
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      showToast(`DeepSeek 调用失败：HTTP ${response.status}，已使用本地规则兜底。`);
+      return null;
+    }
     const result = await response.json();
-    return result.ok ? result.data : null;
-  } catch {
+    if (result.ok) return result.data;
+    showToast(`${result.error || "DeepSeek 调用失败：未知错误"} ${fallbackMessage}`);
+    return null;
+  } catch (error) {
+    console.error(error);
+    showToast("DeepSeek 调用失败：网络或服务不可达，已使用本地规则兜底。");
     return null;
   }
 }
@@ -895,7 +913,7 @@ async function generatePracticeFeedback() {
   }
 
   const materials = getMaterials();
-  const aiResult = await callAiTask("feedback", { materials, question, answer });
+  const aiResult = await callAiTask("feedback", { materials, question, answer }, "单题反馈已使用本地规则兜底。");
   const feedback = normalizeFeedback(aiResult?.feedback, scoreAnswer(answer, question, materials.role));
   state.practiceRecords.push({ question, answer, feedback, createdAt: new Date().toISOString() });
   const box = $("#practiceFeedback");
@@ -988,16 +1006,61 @@ async function startInterview() {
     questionCount: 0,
     followUps: 0,
   };
+  state.interviewNotes = [];
 
   $("#chatTimeline").innerHTML = "";
+  renderInterviewNotes();
   $("#interviewAnswer").value = "";
   $("#roomTitle").textContent = `${type}进行中`;
+  $("#sideCurrentQuestion").textContent = "AI 面试官正在准备第一道问题。";
+  activateSidePanel("overview");
   setMeetingStatus("calling");
   playRingtone();
   window.setTimeout(() => setMeetingStatus("live"), 900);
-  addInterviewerQuestion(queue.shift() || fallbackQuestion());
+  const firstQuestion = await requestAiInterviewQuestion("opening", "");
+  addInterviewerQuestion(firstQuestion || queue.shift() || fallbackQuestion());
   renderInterviewHeader();
   showToast("模拟面试已开始。");
+}
+
+async function requestAiInterviewQuestion(phase, previousAnswer) {
+  const interview = state.interview;
+  if (!interview) return null;
+  const aiResult = await callAiTask(
+    "interviewNextQuestion",
+    {
+      materials: getMaterials(),
+      previousAnswer,
+      interview: {
+        phase,
+        type: interview.type,
+        maxQuestions: interview.maxQuestions,
+        questionCount: interview.questionCount,
+        followUps: interview.followUps,
+        currentQuestion: interview.currentQuestion,
+        askedQuestions: interview.turns.map((turn) => turn.question?.text).filter(Boolean),
+      },
+    },
+    "面试提问已使用本地题库兜底。",
+  );
+  return normalizeSingleQuestion(aiResult?.question, phase);
+}
+
+function normalizeSingleQuestion(question, phase) {
+  if (!question || !question.text) return null;
+  return {
+    id: `ai-live-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    level: ["基础", "进阶", "挑战"].includes(question.level) ? question.level : phase === "followUp" ? "挑战" : "进阶",
+    type: question.type || "项目追问",
+    role: question.role || $("#interviewType").value || "技术/业务面",
+    text: String(question.text),
+    intent: question.intent || "动态追问候选人当前回答",
+    evidence: question.evidence || "面试上下文",
+    points: arrayOrFallback(question.points, ["背景", "行动", "结果", "反思"]).slice(0, 6),
+    pitfalls: arrayOrFallback(question.pitfalls, ["回答泛泛", "缺少证据"]).slice(0, 4),
+    followUps: arrayOrFallback(question.followUps, ["请补充一个更具体的证据。"]).slice(0, 3),
+    duration: question.duration || "90-150 秒",
+  };
 }
 
 function buildInterviewQueue(type, maxQuestions) {
@@ -1030,6 +1093,7 @@ function addInterviewerQuestion(question, isFollowUp = false) {
   state.interview.currentQuestion = { ...question, isFollowUp };
   state.interview.questionCount += 1;
   appendMessage("interviewer", isFollowUp ? "追问" : state.interview.type, question.text);
+  $("#sideCurrentQuestion").textContent = question.text;
   speakInterviewerText(question.text);
   renderInterviewHeader();
 }
@@ -1043,7 +1107,7 @@ function appendMessage(kind, label, text) {
   timeline.scrollTop = timeline.scrollHeight;
 }
 
-function submitInterviewAnswer() {
+async function submitInterviewAnswer() {
   const interview = state.interview;
   if (!interview || !interview.active || !interview.currentQuestion) {
     showToast("请先开始模拟面试。");
@@ -1065,9 +1129,11 @@ function submitInterviewAnswer() {
   });
   $("#interviewAnswer").value = "";
 
-  const needsFollowUp = shouldAskFollowUp(answer, feedback, interview);
+  const autoFollow = $("#autoFollowToggle")?.checked !== false;
+  const needsFollowUp = autoFollow && shouldAskFollowUp(answer, feedback, interview);
   if (needsFollowUp) {
-    const followQuestion = {
+    const aiFollowQuestion = await requestAiInterviewQuestion("followUp", answer);
+    const followQuestion = aiFollowQuestion || {
       ...interview.currentQuestion,
       text: feedback.followUp,
       level: "挑战",
@@ -1080,11 +1146,12 @@ function submitInterviewAnswer() {
   }
 
   if (interview.questionCount >= interview.maxQuestions || interview.queue.length === 0) {
-    finishInterview();
+    await finishInterview();
     return;
   }
 
-  addInterviewerQuestion(interview.queue.shift());
+  const aiNextQuestion = await requestAiInterviewQuestion("next", answer);
+  addInterviewerQuestion(aiNextQuestion || interview.queue.shift());
 }
 
 function shouldAskFollowUp(answer, feedback, interview) {
@@ -1111,10 +1178,23 @@ function renderInterviewHeader() {
   if (!interview) {
     $("#roomProgress").textContent = "0 / 0";
     $("#followUpCount").textContent = "追问 0 次";
+    $("#sideProgressText").textContent = "等待开始";
+    updateProgressDots(0, 5);
     return;
   }
-  $("#roomProgress").textContent = `${Math.min(interview.questionCount, interview.maxQuestions)} / ${interview.maxQuestions}`;
+  const current = Math.min(interview.questionCount, interview.maxQuestions);
+  $("#roomProgress").textContent = `${current} / ${interview.maxQuestions}`;
   $("#followUpCount").textContent = `追问 ${interview.followUps} 次`;
+  $("#sideProgressText").textContent = `${interview.type} · ${current} / ${interview.maxQuestions}`;
+  updateProgressDots(current, interview.maxQuestions);
+}
+
+function updateProgressDots(current, total) {
+  const dots = $$(".progress-dots span");
+  dots.forEach((dot, index) => {
+    const threshold = Math.ceil(((index + 1) / dots.length) * total);
+    dot.classList.toggle("active", current >= threshold || (current > 0 && index === 0));
+  });
 }
 
 function setMeetingStatus(status) {
@@ -1158,19 +1238,43 @@ function playRingtone() {
 }
 
 async function speakInterviewerText(text) {
+  if ($("#autoTtsToggle")?.checked === false) return;
   try {
-    const voiceConfig = await getVoiceConfig();
-    if (!voiceConfig.configured && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = "zh-CN";
-      utterance.rate = 0.95;
-      utterance.pitch = 1.02;
-      window.speechSynthesis.speak(utterance);
+    const response = await fetch("/api/voice/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voice: "Cherry" }),
+    });
+    const result = await response.json();
+    if (result.ok && result.audioBase64) {
+      await playAudioBase64(result.audioBase64, result.mimeType || "audio/mpeg");
+      return;
     }
-  } catch {
-    // TTS is enhancement-only.
+    showToast(result.error || "阿里云语音失败：未知错误，已切换浏览器语音");
+  } catch (error) {
+    console.error(error);
+    showToast("阿里云语音失败：网络或服务不可达，已切换浏览器语音");
   }
+  speakWithBrowser(text);
+}
+
+async function playAudioBase64(audioBase64, mimeType) {
+  if (ttsAudio) {
+    ttsAudio.pause();
+    ttsAudio = null;
+  }
+  ttsAudio = new Audio(`data:${mimeType};base64,${audioBase64}`);
+  await ttsAudio.play();
+}
+
+function speakWithBrowser(text) {
+  if (!("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "zh-CN";
+  utterance.rate = 0.95;
+  utterance.pitch = 1.02;
+  window.speechSynthesis.speak(utterance);
 }
 
 async function getVoiceConfig() {
@@ -1182,6 +1286,119 @@ async function getVoiceConfig() {
     state.voiceConfig = { configured: false };
   }
   return state.voiceConfig;
+}
+
+async function toggleCandidateCamera() {
+  const button = $("#cameraToggleBtn");
+  const video = $("#candidateVideo");
+  const placeholder = $("#candidatePlaceholder");
+
+  if (candidateCameraStream) {
+    candidateCameraStream.getTracks().forEach((track) => track.stop());
+    candidateCameraStream = null;
+    video.srcObject = null;
+    video.hidden = true;
+    placeholder.hidden = false;
+    setControlButtonLabel(button, "摄像头");
+    showToast("摄像头已关闭。");
+    return;
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast("摄像头开启失败：当前浏览器不支持摄像头调用。");
+    return;
+  }
+
+  try {
+    candidateCameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = candidateCameraStream;
+    video.hidden = false;
+    placeholder.hidden = true;
+    setControlButtonLabel(button, "关闭摄像头");
+    showToast("摄像头已开启。");
+  } catch (error) {
+    console.error(error);
+    showToast("摄像头开启失败：请检查浏览器摄像头权限或设备占用状态。");
+  }
+}
+
+function setControlButtonLabel(button, label) {
+  const strong = button?.querySelector("strong");
+  if (strong) {
+    strong.textContent = label;
+  } else if (button) {
+    button.textContent = label;
+  }
+}
+
+function activateSidePanel(panel) {
+  const target = ["overview", "notes", "settings"].includes(panel) ? panel : "overview";
+  $$("[data-side-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.sideTab === target);
+  });
+  [
+    ["overview", "#overviewPanel"],
+    ["notes", "#notesPanel"],
+    ["settings", "#settingsPanel"],
+  ].forEach(([name, selector]) => {
+    const panelElement = $(selector);
+    const isActive = name === target;
+    panelElement.hidden = !isActive;
+    panelElement.classList.toggle("active", isActive);
+  });
+}
+
+function saveInterviewNote() {
+  const textarea = $("#interviewNotes");
+  const text = textarea.value.trim();
+  if (!text) {
+    showToast("请先输入要记录的面试笔记。");
+    return;
+  }
+  state.interviewNotes.unshift({
+    id: `note-${Date.now()}`,
+    text,
+    question: state.interview?.currentQuestion?.text || "未开始面试",
+    createdAt: new Date().toISOString(),
+  });
+  textarea.value = "";
+  renderInterviewNotes();
+  activateSidePanel("notes");
+  showToast("面试笔记已记录。");
+}
+
+function renderInterviewNotes() {
+  const list = $("#savedNotesList");
+  if (!list) return;
+  if (!state.interviewNotes.length) {
+    list.innerHTML = `<p class="muted">还没有记录。</p>`;
+    return;
+  }
+  list.innerHTML = state.interviewNotes
+    .map(
+      (note) => `
+        <button class="saved-note" type="button" data-note-id="${note.id}">
+          <strong>${formatDate(note.createdAt)}</strong>
+          <span>${escapeHTML(note.text)}</span>
+        </button>
+      `,
+    )
+    .join("");
+  $$(".saved-note").forEach((button) => {
+    button.addEventListener("click", () => {
+      const note = state.interviewNotes.find((item) => item.id === button.dataset.noteId);
+      if (!note) return;
+      $("#interviewNotes").value = note.text;
+      $("#sideCurrentQuestion").textContent = note.question;
+      showToast("已打开这条面试笔记。");
+    });
+  });
+}
+
+function updateAnswerDockDensity() {
+  const dock = $(".answer-dock");
+  const mode = $("#answerHeightSelect").value;
+  dock.classList.toggle("comfortable", mode === "comfortable");
 }
 
 function showInterviewHint() {
@@ -1203,7 +1420,7 @@ async function finishInterview() {
   $("#roomTitle").textContent = "模拟已结束";
   setMeetingStatus("idle");
   const localReport = buildReport(interview);
-  const aiResult = await callAiTask("report", { materials: getMaterials(), interview, localReport });
+  const aiResult = await callAiTask("report", { materials: getMaterials(), interview, localReport }, "面试报告已使用本地规则兜底。");
   const report = normalizeReport(aiResult?.report, localReport);
   renderReport(report);
   saveReport(report);
@@ -1412,7 +1629,7 @@ async function toggleVoiceInput(textareaSelector, buttonSelector) {
       activeRecognition = null;
       activeRecognitionSession = null;
     }
-    button.textContent = "语音作答";
+    setControlButtonLabel(button, "麦克风");
     showToast("录音已停止。若浏览器支持语音识别，转写会自动填入回答框。");
     return;
   }
@@ -1426,7 +1643,7 @@ async function toggleVoiceInput(textareaSelector, buttonSelector) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     activeRecorder = new MediaRecorder(stream);
     activeRecorder.start();
-    button.textContent = "停止录音";
+    setControlButtonLabel(button, "停止录音");
     showToast("正在录音。");
     startSpeechRecognition(textareaSelector);
     activeRecorder.onstop = () => {

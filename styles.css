@@ -687,7 +687,7 @@ textarea:focus {
 
 .interview-shell {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -698,56 +698,146 @@ textarea:focus {
 }
 
 .interview-room {
-  min-height: 560px;
+  overflow: hidden;
+  min-height: 720px;
+  padding: 12px;
+  background: linear-gradient(180deg, #f8fbff, #eef4fb);
+}
+
+.meeting-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 64px;
+  padding: 8px 12px 16px;
+}
+
+.meeting-topbar h3,
+.meeting-topbar span {
+  margin: 0;
+}
+
+.meeting-topbar > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+
+.meeting-topbar > div:first-child > span,
+.meeting-timer span {
+  color: #6c7890;
+  font-size: 13px;
+}
+
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b8c4d3;
+  margin-right: 7px;
+}
+
+.meeting-stage.calling .live-dot {
+  background: var(--accent);
+}
+
+.meeting-stage.live .live-dot {
+  background: #27c0a8;
+}
+
+.meeting-timer {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.meeting-timer strong {
+  font-size: 22px;
 }
 
 .meeting-stage {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
-  grid-template-rows: 1fr auto;
-  gap: 12px;
-  min-height: 330px;
-  overflow: hidden;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+  min-height: 560px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background:
-    linear-gradient(120deg, rgba(23, 32, 51, 0.84), rgba(15, 107, 95, 0.78)),
-    url("./assets/interview-room-reference.png") center / cover;
-  padding: 14px;
-  margin-bottom: 14px;
+  background: #f5f8fd;
+  padding: 10px;
+  margin-bottom: 16px;
 }
 
-.meeting-main-tile,
-.candidate-tile,
-.meeting-side-note {
+.meeting-video-area {
+  display: grid;
+  grid-template-rows: minmax(420px, 1fr) auto;
+  gap: 12px;
+}
+
+.interviewer-video-card {
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: grid;
+  place-items: center;
+  min-height: 460px;
+  overflow: hidden;
   border-radius: 8px;
-  background: rgba(11, 18, 28, 0.58);
+  background:
+    radial-gradient(circle at 42% 24%, rgba(255, 255, 255, 0.9), transparent 22%),
+    linear-gradient(135deg, #d9e2eb 0%, #aebdcc 52%, #7d8d9e 100%);
   color: #fff;
-  backdrop-filter: blur(8px);
 }
 
-.meeting-main-tile {
-  display: grid;
-  grid-row: 1 / span 2;
-  place-items: center;
-  min-height: 300px;
+.incoming-pill {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 2;
+  border-radius: 999px;
+  background: rgba(23, 32, 51, 0.72);
+  padding: 9px 14px;
+  font-weight: 800;
 }
 
-.interviewer-avatar {
+.meeting-stage.live .incoming-pill {
+  background: rgba(36, 118, 77, 0.82);
+}
+
+.meeting-stage.live .incoming-pill::after {
+  content: " 面试中";
+}
+
+.interviewer-figure {
+  position: relative;
   display: grid;
-  width: 112px;
-  height: 112px;
   place-items: center;
-  border: 3px solid rgba(255, 255, 255, 0.78);
+  width: min(420px, 62%);
+  height: min(520px, 86%);
+  margin-top: 40px;
+}
+
+.figure-head {
+  position: absolute;
+  top: 22px;
+  width: 156px;
+  height: 156px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #f3c28f, #9d5b48);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
-  color: #fff;
-  font-size: 48px;
-  font-weight: 900;
+  background:
+    radial-gradient(circle at 50% 42%, #f4c9a4 0 28%, transparent 29%),
+    linear-gradient(145deg, #1e293b 0 45%, #111827 46% 100%);
+  box-shadow: 0 18px 40px rgba(23, 32, 51, 0.24);
+}
+
+.figure-body {
+  position: absolute;
+  bottom: 0;
+  width: 310px;
+  height: 330px;
+  border-radius: 110px 110px 18px 18px;
+  background:
+    linear-gradient(90deg, transparent 0 34%, rgba(255, 255, 255, 0.92) 35% 65%, transparent 66%),
+    linear-gradient(145deg, #b8c6d8, #73849a);
+  box-shadow: 0 30px 80px rgba(23, 32, 51, 0.26);
 }
 
 .meeting-nameplate {
@@ -757,35 +847,46 @@ textarea:focus {
   display: grid;
   gap: 2px;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.38);
+  background: rgba(23, 32, 51, 0.78);
   padding: 10px 12px;
 }
 
 .meeting-nameplate span,
-.call-status,
-.meeting-side-note span,
 .candidate-tile span {
   color: rgba(255, 255, 255, 0.74);
   font-size: 12px;
 }
 
-.call-status {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  padding: 6px 10px;
-}
-
 .candidate-tile {
+  position: absolute;
+  top: 22px;
+  right: 22px;
   display: grid;
-  align-content: end;
-  min-height: 150px;
-  padding: 12px;
+  place-items: center;
+  width: min(260px, 34%);
+  aspect-ratio: 16 / 10.5;
+  overflow: hidden;
+  border: 3px solid rgba(255, 255, 255, 0.86);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.94);
+  box-shadow: 0 18px 44px rgba(23, 32, 51, 0.24);
+  color: #172033;
 }
 
-.candidate-tile strong {
+.candidate-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.candidate-placeholder {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+}
+
+.candidate-placeholder strong {
   display: grid;
   width: 52px;
   height: 52px;
@@ -796,15 +897,164 @@ textarea:focus {
   font-size: 22px;
 }
 
-.meeting-side-note {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  padding: 12px;
+.meeting-control-bar {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 0 2px;
 }
 
-.meeting-side-note strong {
-  line-height: 1.35;
+.control-button {
+  display: grid;
+  min-width: 74px;
+  gap: 6px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #253148;
+  padding: 10px 12px;
+  box-shadow: 0 12px 28px rgba(23, 32, 51, 0.1);
+}
+
+.control-button span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  background: #eef3f8;
+  color: #253148;
+  font-weight: 900;
+}
+
+.control-button strong {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.control-button.danger {
+  color: var(--danger);
+}
+
+.control-button.danger span {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.meeting-side-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 14px;
+}
+
+.side-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.side-tabs button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.side-tabs button.active {
+  background: #fff;
+  color: #1c6dcc;
+  box-shadow: 0 8px 18px rgba(28, 109, 204, 0.12);
+}
+
+.side-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #f7faff);
+  padding: 14px;
+}
+
+.side-card h4,
+.side-card p {
+  margin: 0;
+}
+
+.side-card h4,
+.note-card span,
+.hint-card strong {
+  color: #253148;
+  font-size: 16px;
+}
+
+.side-card p,
+.side-card small,
+.hint-card p {
+  color: var(--muted);
+}
+
+.progress-dots {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin: 18px 6px 12px;
+}
+
+.progress-dots span {
+  display: grid;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e8eff7;
+}
+
+.progress-dots span::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #8da0b8;
+}
+
+.progress-dots span.active {
+  background: #2b76d2;
+}
+
+.progress-dots span.active::before {
+  background: #fff;
+}
+
+.current-question-card {
+  display: grid;
+  gap: 10px;
+  min-height: 150px;
+}
+
+.current-question-card p {
+  color: #253148;
+  line-height: 1.55;
+}
+
+.note-card {
+  display: grid;
+  gap: 10px;
+}
+
+.note-card textarea {
+  min-height: 120px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  resize: vertical;
+}
+
+.hint-card {
+  display: grid;
+  gap: 5px;
 }
 
 .meeting-stage.calling .call-status {
@@ -817,21 +1067,11 @@ textarea:focus {
   color: #fff;
 }
 
-.room-header {
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 12px;
-}
-
-.room-header span:not(.status-pill) {
-  color: var(--muted);
-  font-size: 13px;
-}
-
 .chat-timeline {
   display: grid;
   gap: 12px;
-  min-height: 260px;
-  max-height: 460px;
+  min-height: 160px;
+  max-height: 300px;
   overflow: auto;
   border-radius: 8px;
   background: #f8fafc;
@@ -862,6 +1102,250 @@ textarea:focus {
   color: inherit;
   font-weight: 800;
   opacity: 0.75;
+}
+
+.interview-room {
+  min-height: 0;
+  padding: 12px;
+  background: #f6f9fe;
+}
+
+.meeting-stage {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  min-height: min(720px, calc(100vh - 188px));
+  border: 1px solid #dfe7f2;
+  background: #edf3fb;
+  padding: 10px;
+}
+
+.meeting-topbar {
+  min-height: 54px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  padding: 8px 12px;
+}
+
+.interview-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 330px);
+  gap: 10px;
+  min-height: 0;
+}
+
+.interviewer-video-card {
+  min-height: 0;
+  height: 100%;
+  background: #121826;
+}
+
+.interviewer-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 36% 58%;
+  filter: saturate(0.98) contrast(1.02);
+}
+
+.interviewer-photo-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(17, 24, 39, 0.06), rgba(17, 24, 39, 0.18)),
+    linear-gradient(90deg, rgba(17, 24, 39, 0.14), transparent 42%, rgba(17, 24, 39, 0.12));
+}
+
+.incoming-pill,
+.meeting-nameplate,
+.candidate-tile {
+  z-index: 2;
+}
+
+.incoming-pill {
+  top: 14px;
+  left: 14px;
+  padding: 8px 12px;
+}
+
+.meeting-stage.live .incoming-pill {
+  font-size: 0;
+}
+
+.meeting-stage.live .incoming-pill::after {
+  content: "面试中";
+  font-size: 14px;
+}
+
+.candidate-tile {
+  top: 16px;
+  right: 16px;
+  width: min(230px, 32%);
+}
+
+.meeting-side-panel {
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.side-panel-body {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.side-panel-body[hidden] {
+  display: none !important;
+}
+
+.side-tabs {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.side-tabs button {
+  min-height: 40px;
+  font-size: 13px;
+}
+
+.side-card {
+  padding: 12px;
+}
+
+.progress-dots {
+  gap: 8px;
+  margin: 12px 0 8px;
+}
+
+.progress-dots span {
+  height: 28px;
+}
+
+.current-question-card {
+  min-height: 132px;
+}
+
+.note-card textarea {
+  min-height: 92px;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 10px;
+}
+
+.saved-notes-card {
+  max-height: 210px;
+  overflow: auto;
+}
+
+.saved-notes-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.saved-note {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  padding: 10px;
+  text-align: left;
+}
+
+.saved-note span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.settings-card {
+  display: grid;
+  gap: 12px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  color: #253148;
+  font-weight: 750;
+}
+
+.setting-row input {
+  width: auto;
+}
+
+.compact-field {
+  margin-top: 0;
+}
+
+.meeting-bottom-bar {
+  display: grid;
+  grid-template-columns: minmax(430px, 0.78fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  padding: 10px;
+}
+
+.meeting-control-bar {
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0;
+}
+
+.control-button {
+  min-width: 66px;
+  padding: 8px 10px;
+}
+
+.control-button span {
+  width: 30px;
+  height: 30px;
+}
+
+.answer-dock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.answer-dock-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.answer-dock textarea {
+  min-height: 72px;
+  max-height: 130px;
+  resize: vertical;
+}
+
+.answer-dock.comfortable textarea {
+  min-height: 128px;
+}
+
+.chat-timeline {
+  min-height: 108px;
+  max-height: 150px;
+  margin-top: 10px;
 }
 
 .report-layout {

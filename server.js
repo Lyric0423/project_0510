@@ -5,6 +5,7 @@ const {
   BASE_SYSTEM_PROMPT,
   buildDiagnoseAndQuestionsPrompt,
   buildFeedbackPrompt,
+  buildInterviewNextQuestionPrompt,
   buildReportPrompt,
 } = require("./prompts");
 
@@ -19,7 +20,17 @@ const llmApiKey =
   "";
 const llmBaseUrl = (process.env.LLM_BASE_URL || process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/$/, "");
 const llmModel = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-chat";
-const voiceAppKey = process.env.ALIYUN_VOICE_APPKEY || readSecret(process.env.ALIYUN_VOICE_APPKEY_FILE || path.join(secretRoot, "aliyun_voice_appkey")) || "";
+const aliyunApiKey =
+  process.env.DASHSCOPE_API_KEY ||
+  process.env.ALIYUN_API_KEY ||
+  process.env.ALIYUN_VOICE_API_KEY ||
+  readSecret(process.env.ALIYUN_API_KEY_FILE || path.join(secretRoot, "ali-key")) ||
+  readSecret(process.env.ALIYUN_VOICE_API_KEY_FILE || path.join(secretRoot, "ali-key")) ||
+  readSecret(process.env.ALIYUN_VOICE_APPKEY_FILE || path.join(secretRoot, "aliyun_voice_appkey")) ||
+  "";
+const aliyunTtsBaseUrl = (process.env.ALIYUN_TTS_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
+const aliyunTtsModel = process.env.ALIYUN_TTS_MODEL || "qwen3-tts-flash";
+const aliyunTtsVoice = process.env.ALIYUN_TTS_VOICE || "Cherry";
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -43,7 +54,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         service: "mianshicang-ai",
         llmConfigured: Boolean(llmApiKey),
-        voiceConfigured: Boolean(voiceAppKey),
+        voiceConfigured: Boolean(aliyunApiKey),
         model: llmModel,
         baseUrl: llmBaseUrl,
       });
@@ -60,11 +71,16 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "POST" && url.pathname === "/api/voice/tts") {
+      return await handleVoiceTts(req, res);
+    }
+
     if (req.method === "GET" && url.pathname === "/api/voice/config") {
       return sendJson(res, 200, {
         ok: true,
-        provider: voiceAppKey ? "aliyun-nls" : "browser-speech-synthesis",
-        configured: Boolean(voiceAppKey),
+        provider: aliyunApiKey ? "aliyun-dashscope" : "browser-speech-synthesis",
+        configured: Boolean(aliyunApiKey),
+        model: aliyunTtsModel,
       });
     }
 
@@ -82,7 +98,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, "0.0.0.0", () => {
   console.log(`Mianshicang MVP server is running at http://0.0.0.0:${port}`);
   console.log(`LLM model: ${llmModel}; configured: ${Boolean(llmApiKey)}`);
-  console.log(`Voice provider configured: ${Boolean(voiceAppKey)}`);
+  console.log(`Voice provider configured: ${Boolean(aliyunApiKey)}`);
 });
 
 async function handleAiTask(req, res) {
@@ -99,7 +115,8 @@ async function handleAiTask(req, res) {
     return sendJson(res, 200, {
       ok: false,
       fallback: true,
-      error: "LLM_API_KEY is not configured. Frontend will use local fallback.",
+      error: "DeepSeek 调用失败：未读取到 /Users/lyric/key/api-key",
+      code: "DEEPSEEK_KEY_MISSING",
     });
   }
 
@@ -108,13 +125,24 @@ async function handleAiTask(req, res) {
     return sendJson(res, 400, { ok: false, error: "Unknown AI task" });
   }
 
-  const data = await callLLM(prompt);
-  return sendJson(res, 200, { ok: true, data });
+  try {
+    const data = await callLLM(prompt);
+    return sendJson(res, 200, { ok: true, data });
+  } catch (error) {
+    console.error(error);
+    return sendJson(res, 200, {
+      ok: false,
+      fallback: true,
+      error: error.publicMessage || "DeepSeek 调用失败：网络或服务异常，请检查 API Key、余额和服务状态",
+      code: error.code || "DEEPSEEK_REQUEST_FAILED",
+    });
+  }
 }
 
 function buildTaskPrompt(task, payload) {
   if (task === "diagnoseAndQuestions") return buildDiagnoseAndQuestionsPrompt(payload);
   if (task === "feedback") return buildFeedbackPrompt(payload);
+  if (task === "interviewNextQuestion") return buildInterviewNextQuestionPrompt(payload);
   if (task === "report") return buildReportPrompt(payload);
   return "";
 }
@@ -139,7 +167,10 @@ async function callLLM(userPrompt) {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`LLM request failed: ${response.status} ${text.slice(0, 500)}`);
+    const error = new Error(`LLM request failed: ${response.status} ${text.slice(0, 500)}`);
+    error.code = `DEEPSEEK_HTTP_${response.status}`;
+    error.publicMessage = buildDeepSeekErrorMessage(response.status, text);
+    throw error;
   }
 
   const json = await response.json();
@@ -147,16 +178,117 @@ async function callLLM(userPrompt) {
   return parseLooseJson(content);
 }
 
+async function handleVoiceTts(req, res) {
+  let body;
+  try {
+    body = await readJson(req);
+  } catch {
+    return sendJson(res, 400, { ok: false, error: "Invalid JSON request body" });
+  }
+
+  const text = String(body.text || "").trim();
+  if (!text) {
+    return sendJson(res, 400, { ok: false, error: "阿里云语音失败：待合成文本为空" });
+  }
+  if (!aliyunApiKey) {
+    return sendJson(res, 200, {
+      ok: false,
+      fallback: true,
+      error: "阿里云语音失败：未读取到 /Users/lyric/key/ali-key",
+      code: "ALIYUN_KEY_MISSING",
+    });
+  }
+
+  try {
+    const audio = await callAliyunTts(text, body.voice || aliyunTtsVoice);
+    if (!audio.base64) {
+      return sendJson(res, 200, {
+        ok: false,
+        fallback: true,
+        error: "阿里云语音失败：接口返回音频为空，已切换浏览器语音",
+        code: "ALIYUN_EMPTY_AUDIO",
+      });
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      provider: "aliyun-dashscope",
+      mimeType: audio.mimeType,
+      audioBase64: audio.base64,
+    });
+  } catch (error) {
+    console.error(error);
+    return sendJson(res, 200, {
+      ok: false,
+      fallback: true,
+      error: error.publicMessage || "阿里云语音失败：网络或服务异常，已切换浏览器语音",
+      code: error.code || "ALIYUN_TTS_FAILED",
+    });
+  }
+}
+
+async function callAliyunTts(text, voice) {
+  const response = await fetch(`${aliyunTtsBaseUrl}/audio/speech`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${aliyunApiKey}`,
+    },
+    body: JSON.stringify({
+      model: aliyunTtsModel,
+      input: text,
+      voice,
+      response_format: "mp3",
+    }),
+  });
+
+  const contentType = response.headers.get("content-type") || "audio/mpeg";
+  if (!response.ok) {
+    const detail = await response.text();
+    const error = new Error(`Aliyun TTS request failed: ${response.status} ${detail.slice(0, 500)}`);
+    error.code = `ALIYUN_HTTP_${response.status}`;
+    error.publicMessage = buildAliyunErrorMessage(response.status, detail);
+    throw error;
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return {
+    mimeType: contentType.includes("audio") ? contentType : "audio/mpeg",
+    base64: buffer.toString("base64"),
+  };
+}
+
+function buildDeepSeekErrorMessage(status, detail) {
+  if (status === 401 || status === 403) return `DeepSeek 调用失败：${status}，请检查 API Key 是否正确`;
+  if (status === 429) return "DeepSeek 调用失败：429，可能是限流或额度不足，请检查账号额度";
+  if (status >= 500) return `DeepSeek 调用失败：${status}，服务端异常，请稍后重试`;
+  return `DeepSeek 调用失败：${status}，${String(detail || "").slice(0, 120)}`;
+}
+
+function buildAliyunErrorMessage(status, detail) {
+  if (status === 401 || status === 403) return `阿里云语音失败：${status}，请检查 ali-key 是否为 DashScope API Key`;
+  if (status === 429) return "阿里云语音失败：429，可能是限流或额度不足，已切换浏览器语音";
+  if (status >= 500) return `阿里云语音失败：${status}，阿里云服务异常，已切换浏览器语音`;
+  return `阿里云语音失败：${status}，${String(detail || "").slice(0, 120)}`;
+}
+
 function parseLooseJson(content) {
   try {
     return JSON.parse(content);
   } catch {
     const match = String(content).match(/\{[\s\S]*\}/);
-    if (!match) return {};
+    if (!match) {
+      const error = new Error("DeepSeek returned invalid JSON");
+      error.code = "DEEPSEEK_INVALID_JSON";
+      error.publicMessage = "DeepSeek 返回内容不是合法 JSON，已使用本地规则兜底";
+      throw error;
+    }
     try {
       return JSON.parse(match[0]);
     } catch {
-      return {};
+      const error = new Error("DeepSeek returned invalid JSON");
+      error.code = "DEEPSEEK_INVALID_JSON";
+      error.publicMessage = "DeepSeek 返回内容不是合法 JSON，已使用本地规则兜底";
+      throw error;
     }
   }
 }
@@ -223,7 +355,7 @@ function readSecret(filePath) {
       .map((line) => line.trim())
       .find((line) => line && !line.startsWith("#"));
     if (!keyValueLine) return "";
-    const match = keyValueLine.match(/^(?:DEEPSEEK_API_KEY|LLM_API_KEY|API_KEY|ALIYUN_VOICE_APPKEY)\s*=\s*(.+)$/);
+    const match = keyValueLine.match(/^(?:DEEPSEEK_API_KEY|LLM_API_KEY|API_KEY|DASHSCOPE_API_KEY|ALIYUN_API_KEY|ALIYUN_VOICE_API_KEY|ALIYUN_VOICE_APPKEY)\s*=\s*(.+)$/);
     return (match ? match[1] : keyValueLine).replace(/^["']|["']$/g, "").trim();
   } catch {
     return "";

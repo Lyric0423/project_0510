@@ -8,7 +8,7 @@
       name="description"
       content="面向本科生的大厂实习 AI 模拟面试官，支持简历解析、JD 分析、个性化题库、模拟面试与复盘报告。"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260510-routefix" />
+    <link rel="stylesheet" href="./styles.css?v=20260510-interview-ui" />
   </head>
   <body>
     <header class="topbar">
@@ -38,7 +38,7 @@
             先聚焦后端、前端、数据分析、算法和产品实习。现在已支持岗位通用 JD、浏览器 OCR/PDF 提取、语音转写入口和后端大模型 API 代理。
           </p>
           <div class="hero-actions">
-            <button class="button primary" type="button" data-view-target="setup">开始生成题库</button>
+            <button class="button primary" type="button" data-view-target="setup">点击开始使用</button>
             <button class="button ghost" type="button" data-view-target="interview">直接体验模拟</button>
           </div>
         </div>
@@ -271,46 +271,142 @@
               </select>
             </label>
             <button class="button primary" id="startInterviewBtn" type="button">开始模拟</button>
-            <button class="button secondary" id="finishInterviewBtn" type="button">结束并生成报告</button>
             <p class="muted">模拟过程中每次只回答当前问题。回答越具体，追问越贴近真实面试。</p>
           </aside>
 
           <article class="panel interview-room">
             <div class="meeting-stage" id="meetingStage">
-              <div class="meeting-main-tile">
-                <div class="interviewer-avatar" aria-hidden="true">陈</div>
-                <div class="meeting-nameplate">
-                  <strong id="interviewerName">陈面试官</strong>
-                  <span id="interviewerTitle">技术面试官 · 等待接入</span>
+              <header class="meeting-topbar">
+                <div>
+                  <h3 id="roomTitle">AI 模拟面试</h3>
+                  <span><span class="live-dot"></span><span id="callStatus">等待开始</span></span>
                 </div>
-                <div class="call-status" id="callStatus">等待开始</div>
+                <div class="meeting-timer">
+                  <strong id="roomProgress">0 / 0</strong>
+                  <span id="followUpCount">追问 0 次</span>
+                </div>
+              </header>
+
+              <div class="interview-workbench">
+                <section class="interviewer-video-card" aria-label="AI 面试官画面">
+                  <img class="interviewer-photo" src="./assets/interview-room-reference.png" alt="AI 面试官陈面试官" />
+                  <div class="interviewer-photo-overlay"></div>
+                  <span class="incoming-pill">来电中...</span>
+                  <div class="meeting-nameplate">
+                    <strong id="interviewerName">陈面试官</strong>
+                    <span id="interviewerTitle">技术面试官 · 等待接入</span>
+                  </div>
+                  <div class="candidate-tile" id="candidateTile">
+                    <video id="candidateVideo" autoplay playsinline muted hidden></video>
+                    <div class="candidate-placeholder" id="candidatePlaceholder">
+                      <span>候选人</span>
+                      <strong>你</strong>
+                    </div>
+                  </div>
+                </section>
+
+                <aside class="meeting-side-panel">
+                  <div class="side-tabs" aria-label="面试辅助面板">
+                    <button class="active" type="button" data-side-tab="overview">面试概览</button>
+                    <button type="button" data-side-tab="notes">面试笔记</button>
+                    <button type="button" data-side-tab="settings">设置</button>
+                  </div>
+                  <div class="side-panel-body active" id="overviewPanel">
+                    <div class="side-card">
+                      <h4>面试进度</h4>
+                      <div class="progress-dots" aria-hidden="true">
+                        <span></span>
+                        <span class="active"></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
+                      <p id="sideProgressText">等待开始</p>
+                    </div>
+                    <div class="side-card current-question-card">
+                      <h4>当前问题</h4>
+                      <p id="sideCurrentQuestion">点击开始模拟后，AI 面试官会在这里展示当前问题。</p>
+                      <small id="meetingFocus">项目深挖 / 岗位匹配 / 追问承压</small>
+                    </div>
+                  </div>
+                  <div class="side-panel-body" id="notesPanel" hidden>
+                    <label class="side-card note-card">
+                      <span>面试笔记</span>
+                      <textarea id="interviewNotes" rows="4" placeholder="记录面试官追问、你的卡点、待补证据..."></textarea>
+                      <button class="button primary" id="saveInterviewNoteBtn" type="button">记录</button>
+                    </label>
+                    <div class="side-card saved-notes-card">
+                      <h4>已记录</h4>
+                      <div class="saved-notes-list" id="savedNotesList">
+                        <p class="muted">还没有记录。</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="side-panel-body" id="settingsPanel" hidden>
+                    <div class="side-card settings-card">
+                      <h4>面试设置</h4>
+                      <label class="setting-row">
+                        <span>自动播放面试官语音</span>
+                        <input id="autoTtsToggle" type="checkbox" checked />
+                      </label>
+                      <label class="setting-row">
+                        <span>提交后自动追问</span>
+                        <input id="autoFollowToggle" type="checkbox" checked />
+                      </label>
+                      <label class="field compact-field">
+                        <span>回答框高度</span>
+                        <select id="answerHeightSelect">
+                          <option value="compact" selected>紧凑</option>
+                          <option value="comfortable">舒展</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="side-card hint-card">
+                      <strong>提示</strong>
+                      <p>设置只影响当前浏览器体验，不会改变题库和报告逻辑。</p>
+                    </div>
+                  </div>
+                </aside>
               </div>
-              <div class="candidate-tile">
-                <span>候选人</span>
-                <strong>你</strong>
-              </div>
-              <div class="meeting-side-note">
-                <span>当前关注</span>
-                <strong id="meetingFocus">项目深挖 / 岗位匹配 / 追问承压</strong>
-              </div>
-            </div>
-            <div class="room-header">
-              <div>
-                <h3 id="roomTitle">等待开始</h3>
-                <span id="roomProgress">0 / 0</span>
-              </div>
-              <span class="status-pill" id="followUpCount">追问 0 次</span>
+
+              <footer class="meeting-bottom-bar">
+                <div class="meeting-control-bar">
+                  <button class="control-button" id="interviewRecordBtn" type="button">
+                    <span>麦</span>
+                    <strong>麦克风</strong>
+                  </button>
+                  <button class="control-button" id="cameraToggleBtn" type="button">
+                    <span>像</span>
+                    <strong>摄像头</strong>
+                  </button>
+                  <button class="control-button" type="button" aria-disabled="true">
+                    <span>屏</span>
+                    <strong>共享屏幕</strong>
+                  </button>
+                  <button class="control-button" id="notesToolBtn" type="button">
+                    <span>记</span>
+                    <strong>面试笔记</strong>
+                  </button>
+                  <button class="control-button" id="settingsToolBtn" type="button">
+                    <span>设</span>
+                    <strong>设置</strong>
+                  </button>
+                  <button class="control-button danger" id="finishInterviewBtn" type="button">
+                    <span>停</span>
+                    <strong>结束面试</strong>
+                  </button>
+                </div>
+                <div class="answer-dock">
+                  <div class="answer-dock-header">
+                    <strong>当前回答</strong>
+                    <button class="text-button" id="interviewHintBtn" type="button">轻提示</button>
+                  </div>
+                  <textarea id="interviewAnswer" rows="3" placeholder="在这里回答当前问题，建议用 背景-行动-结果-反思。"></textarea>
+                  <button class="button primary" id="submitInterviewAnswerBtn" type="button">提交回答</button>
+                </div>
+              </footer>
             </div>
             <div class="chat-timeline" id="chatTimeline" aria-live="polite"></div>
-            <label class="field">
-              <span>当前回答</span>
-              <textarea id="interviewAnswer" rows="5" placeholder="开始模拟后，在这里回答当前问题。"></textarea>
-            </label>
-            <div class="practice-actions">
-              <button class="button secondary" id="interviewHintBtn" type="button">轻提示</button>
-              <button class="button secondary" id="interviewRecordBtn" type="button">语音作答</button>
-              <button class="button primary" id="submitInterviewAnswerBtn" type="button">提交回答</button>
-            </div>
           </article>
         </div>
       </section>
@@ -340,6 +436,6 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script src="./app.js?v=20260510-routefix"></script>
+    <script src="./app.js?v=20260510-interview-ui"></script>
   </body>
 </html>
