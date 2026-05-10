@@ -2,10 +2,9 @@
 
 ## 1. Key 配置在哪里
 
-真实 key 不要写进代码仓库。本项目启动时会先读取本地 `.env`，再读取系统环境变量，`.env` 已被 `.gitignore` 忽略。
+真实 key 不要写进代码仓库。本项目启动时会读取本地 `.env` 和系统环境变量，`.env` 已被 `.gitignore` 忽略。
 
 - DeepSeek：使用 `DEEPSEEK_API_KEY`，兼容 `LLM_API_KEY`。
-  - 如果 `.env` 没有配置，仍会备用读取 `/Users/lyric/key/api-key`。
   - 接口地址默认 `https://api.deepseek.com`，模型默认 `deepseek-chat`。
 - 阿里云 NLS：使用 `ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`、`ALIYUN_NLS_APPKEY`。
   - WebSocket 地址默认 `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1`。
