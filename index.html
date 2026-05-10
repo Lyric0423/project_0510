@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>面试舱 AI - 大厂实习模拟面试官</title>
+    <meta
+      name="description"
+      content="面向本科生的大厂实习 AI 模拟面试官，支持简历解析、JD 分析、个性化题库、模拟面试与复盘报告。"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="回到首页">
+        <span class="brand-mark">M</span>
+        <span>
+          <strong>面试舱 AI</strong>
+          <small>大厂实习版</small>
+        </span>
+      </a>
+      <nav class="nav-links" aria-label="主导航">
+        <a href="#setup">开始准备</a>
+        <a href="#questions">题库</a>
+        <a href="#interview">模拟</a>
+        <a href="#report">报告</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero-section" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">本科生大厂实习面试训练</p>
+          <h1 id="hero-title">根据你的简历和岗位，生成一场更像真实面试的 AI 对练。</h1>
+          <p class="hero-subtitle">
+            先聚焦后端、前端、数据分析、算法和产品实习。当前版本提供本地规则模拟，后续可接入真实大模型、OCR、ASR 与知识库服务。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#setup">开始生成题库</a>
+            <a class="button ghost" href="#interview">直接体验模拟</a>
+          </div>
+        </div>
+        <div class="hero-panel" aria-label="产品能力概览">
+          <div class="signal-card">
+            <span class="signal-label">MVP 主链路</span>
+            <div class="flow-line">
+              <span>简历</span>
+              <span>JD</span>
+              <span>题库</span>
+              <span>模拟</span>
+              <span>报告</span>
+            </div>
+          </div>
+          <div class="metric-grid">
+            <div>
+              <strong id="heroQuestionCount">30</strong>
+              <span>个性化问题</span>
+            </div>
+            <div>
+              <strong>3</strong>
+              <span>面试官角色</span>
+            </div>
+            <div>
+              <strong>7/14/30</strong>
+              <span>天行动计划</span>
+            </div>
+          </div>
+          <div class="radar-card" aria-label="评分维度示意">
+            <div class="radar-bars">
+              <span style="--height: 74%"></span>
+              <span style="--height: 58%"></span>
+              <span style="--height: 66%"></span>
+              <span style="--height: 82%"></span>
+              <span style="--height: 49%"></span>
+              <span style="--height: 70%"></span>
+            </div>
+            <p>岗位匹配、项目深度、技术基础、结构表达、真实性、追问承压</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="setup" class="section setup-section" aria-labelledby="setup-title">
+        <div class="section-heading">
+          <p class="eyebrow">Step 1</p>
+          <h2 id="setup-title">建立你的面试上下文</h2>
+          <p>选择目标岗位，补充简历和 JD。信息越具体，题库和追问越贴近真实面试。</p>
+        </div>
+
+        <div class="workspace-grid">
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>岗位方向</h3>
+              <span class="status-pill">必填</span>
+            </div>
+            <div class="role-grid" id="roleGrid" aria-label="岗位方向选择"></div>
+
+            <label class="field">
+              <span>准备时间</span>
+              <select id="timelineSelect">
+                <option value="一周内">一周内</option>
+                <option value="一个月内" selected>一个月内</option>
+                <option value="三个月内">三个月内</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>投递阶段</span>
+              <select id="stageSelect">
+                <option value="未投递">未投递</option>
+                <option value="笔试后">笔试后</option>
+                <option value="一面前" selected>一面前</option>
+                <option value="二面前">二面前</option>
+                <option value="HR面前">HR 面前</option>
+              </select>
+            </label>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>简历材料</h3>
+              <span class="status-pill">支持粘贴优先</span>
+            </div>
+            <label class="file-drop" for="resumeFile">
+              <input id="resumeFile" type="file" accept=".txt,.md,.pdf,.doc,.docx,.png,.jpg,.jpeg" />
+              <span>上传简历文件</span>
+              <small id="resumeFileName">PDF/DOCX 当前会记录文件名，建议同时粘贴文本</small>
+            </label>
+            <label class="field">
+              <span>粘贴简历文本或项目经历</span>
+              <textarea
+                id="resumeText"
+                rows="9"
+                placeholder="示例：计算机专业，大三。项目：电商推荐系统，使用 Java、Spring Boot、MySQL、Redis，负责商品接口、缓存设计和推荐结果排序..."
+              ></textarea>
+            </label>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>目标 JD</h3>
+              <span class="status-pill">可先填岗位</span>
+            </div>
+            <label class="field">
+              <span>岗位名称</span>
+              <input id="jobTitle" type="text" placeholder="例如：后端开发实习生" />
+            </label>
+            <label class="field">
+              <span>公司/业务线</span>
+              <input id="companyName" type="text" placeholder="例如：字节跳动 / 电商业务" />
+            </label>
+            <label class="file-drop" for="jdFile">
+              <input id="jdFile" type="file" accept=".txt,.md,.png,.jpg,.jpeg,.pdf" />
+              <span>上传 JD 截图或文本</span>
+              <small id="jdFileName">截图 OCR 后端后续接入，当前建议粘贴 JD 文本</small>
+            </label>
+            <label class="field">
+              <span>粘贴 JD 文本</span>
+              <textarea
+                id="jdText"
+                rows="7"
+                placeholder="示例：熟悉 Java 基础、Spring Boot、MySQL、Redis，有良好的数据结构与算法基础，具备项目开发经验..."
+              ></textarea>
+            </label>
+          </article>
+        </div>
+
+        <div class="action-strip">
+          <button class="button primary" id="generateBtn" type="button">生成匹配诊断与题库</button>
+          <button class="button secondary" id="fillDemoBtn" type="button">填入后端示例</button>
+          <p id="setupHint">本地 MVP 不会上传你的材料，数据仅保存在当前浏览器。</p>
+        </div>
+      </section>
+
+      <section class="section" id="diagnosis" aria-labelledby="diagnosis-title">
+        <div class="section-heading compact">
+          <p class="eyebrow">Step 2</p>
+          <h2 id="diagnosis-title">岗位匹配诊断</h2>
+          <p>系统会根据简历与 JD 抽取关键词，给出优势、风险和准备优先级。</p>
+        </div>
+        <div class="diagnosis-grid">
+          <article class="score-card">
+            <span>综合匹配度</span>
+            <strong id="matchScore">等待生成</strong>
+            <div class="score-track"><span id="scoreBar"></span></div>
+            <p id="matchSummary">完成上方信息后生成诊断。</p>
+          </article>
+          <article class="panel">
+            <h3>优势</h3>
+            <ul class="clean-list" id="strengthList"></ul>
+          </article>
+          <article class="panel">
+            <h3>风险</h3>
+            <ul class="clean-list risk-list" id="riskList"></ul>
+          </article>
+          <article class="panel">
+            <h3>准备优先级</h3>
+            <ol class="number-list" id="priorityList"></ol>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="questions" aria-labelledby="questions-title">
+        <div class="section-heading compact">
+          <p class="eyebrow">Step 3</p>
+          <h2 id="questions-title">个性化面试题库</h2>
+          <p>题库分为基础、进阶、挑战三层。提示只给框架和要点，不给完整背诵答案。</p>
+        </div>
+
+        <div class="toolbar">
+          <div class="segmented" role="tablist" aria-label="题库难度">
+            <button class="active" type="button" data-level="基础">基础</button>
+            <button type="button" data-level="进阶">进阶</button>
+            <button type="button" data-level="挑战">挑战</button>
+          </div>
+          <select id="typeFilter" aria-label="题型筛选">
+            <option value="全部">全部题型</option>
+          </select>
+        </div>
+
+        <div class="question-layout">
+          <div class="question-list" id="questionList"></div>
+          <article class="panel practice-panel" id="practice" aria-labelledby="practice-title">
+            <div class="panel-heading">
+              <h3 id="practice-title">自主练习</h3>
+              <span class="status-pill" id="currentQuestionMeta">未选择题目</span>
+            </div>
+            <p class="question-text" id="currentQuestion">生成题库后，点击任意题目开始练习。</p>
+            <div class="hint-box" id="hintBox" hidden></div>
+            <div class="practice-actions">
+              <button class="button secondary" id="hintBtn" type="button">要点提示</button>
+              <button class="button secondary" id="recordBtn" type="button">语音作答</button>
+            </div>
+            <label class="field">
+              <span>你的回答</span>
+              <textarea id="practiceAnswer" rows="7" placeholder="请用自己的真实经历作答。建议包含背景、行动、结果和反思。"></textarea>
+            </label>
+            <button class="button primary" id="feedbackBtn" type="button">生成单题反馈</button>
+            <div class="feedback-box" id="practiceFeedback" hidden></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="interview" aria-labelledby="interview-title">
+        <div class="section-heading compact">
+          <p class="eyebrow">Step 4</p>
+          <h2 id="interview-title">真实模拟面试</h2>
+          <p>选择面试类型后，AI 面试官会连续提问，并根据回答动态追问。</p>
+        </div>
+
+        <div class="interview-shell">
+          <aside class="panel interview-settings">
+            <h3>面试设置</h3>
+            <label class="field">
+              <span>面试类型</span>
+              <select id="interviewType">
+                <option value="技术/业务面">技术/业务面</option>
+                <option value="HR面">HR 面</option>
+                <option value="压力面">压力面</option>
+                <option value="产品/数据面">产品/数据面</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>模拟长度</span>
+              <select id="interviewLength">
+                <option value="quick">快速模拟 5-7 题</option>
+                <option value="standard" selected>标准模拟 8-12 题</option>
+              </select>
+            </label>
+            <button class="button primary" id="startInterviewBtn" type="button">开始模拟</button>
+            <button class="button secondary" id="finishInterviewBtn" type="button">结束并生成报告</button>
+            <p class="muted">模拟过程中每次只回答当前问题。回答越具体，追问越贴近真实面试。</p>
+          </aside>
+
+          <article class="panel interview-room">
+            <div class="room-header">
+              <div>
+                <h3 id="roomTitle">等待开始</h3>
+                <span id="roomProgress">0 / 0</span>
+              </div>
+              <span class="status-pill" id="followUpCount">追问 0 次</span>
+            </div>
+            <div class="chat-timeline" id="chatTimeline" aria-live="polite"></div>
+            <label class="field">
+              <span>当前回答</span>
+              <textarea id="interviewAnswer" rows="5" placeholder="开始模拟后，在这里回答当前问题。"></textarea>
+            </label>
+            <div class="practice-actions">
+              <button class="button secondary" id="interviewHintBtn" type="button">轻提示</button>
+              <button class="button secondary" id="interviewRecordBtn" type="button">语音作答</button>
+              <button class="button primary" id="submitInterviewAnswerBtn" type="button">提交回答</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="report" aria-labelledby="report-title">
+        <div class="section-heading compact">
+          <p class="eyebrow">Step 5</p>
+          <h2 id="report-title">面试报告</h2>
+          <p>报告会拆分内容短板、表达短板和知识短板，并给出下一轮训练路径。</p>
+        </div>
+
+        <div class="report-layout">
+          <article class="panel report-card" id="reportCard">
+            <h3>暂无报告</h3>
+            <p class="muted">完成一次模拟面试后，这里会展示总分、分项评分、逐题复盘和行动计划。</p>
+          </article>
+          <aside class="panel history-panel">
+            <div class="panel-heading">
+              <h3>历史记录</h3>
+              <button class="text-button" id="clearHistoryBtn" type="button">清空</button>
+            </div>
+            <div id="historyList" class="history-list"></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
