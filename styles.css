@@ -464,9 +464,14 @@ textarea:focus {
 
 .file-drop small,
 .muted,
-#setupHint {
+#setupHint,
+.inline-note {
   color: var(--muted);
   font-size: 13px;
+}
+
+.inline-note {
+  margin: 10px 0 0;
 }
 
 .action-strip {

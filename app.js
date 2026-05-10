@@ -37,10 +37,26 @@ const roles = [
   },
 ];
 
+const defaultJdTemplates = {
+  backend:
+    "岗位：后端开发实习生。职责：参与业务系统后端接口开发、数据库表设计、缓存与基础中间件使用、线上问题排查和性能优化。要求：熟悉 Java/Go/Python 任一语言，理解 HTTP、TCP/IP、操作系统、数据库、数据结构与算法基础；了解 Spring Boot、MySQL、Redis、消息队列等常见后端技术；能讲清项目背景、接口设计、技术选型、异常处理和结果指标。加分项：了解缓存一致性、并发控制、限流降级、日志监控、简单系统设计。",
+  frontend:
+    "岗位：前端开发实习生。职责：参与 Web/H5 页面开发、组件建设、接口联调、页面性能优化和工程化建设。要求：熟悉 HTML、CSS、JavaScript/TypeScript，了解 React/Vue 任一框架，理解浏览器渲染、网络请求、模块化、状态管理和前端工程化基础；能讲清项目中的组件设计、交互实现、性能优化和兼容性处理。加分项：有移动端适配、可视化、低代码、前端监控或复杂业务组件经验。",
+  data:
+    "岗位：数据分析实习生。职责：参与业务数据提取、指标体系建设、报表分析、专题分析和策略效果评估。要求：熟悉 SQL、Excel、Python 任一数据分析工具，理解漏斗、留存、转化、分群、A/B 实验等常见分析方法；能讲清分析问题、数据口径、指标定义、分析过程、结论和业务建议。加分项：有真实业务分析、可视化看板、增长分析、用户行为分析或机器学习基础。",
+  algorithm:
+    "岗位：算法实习生。职责：参与数据处理、模型训练、实验评估、效果分析和算法工程落地。要求：熟悉 Python，掌握机器学习/深度学习基础，了解 PyTorch/TensorFlow 任一框架，能讲清数据集、特征、模型、评价指标、baseline、实验设计和效果提升。加分项：有推荐、搜索、NLP、CV、广告、风控等方向项目经验，具备较好的算法题和工程实现能力。",
+  product:
+    "岗位：产品经理实习生。职责：参与用户调研、需求分析、竞品分析、PRD 撰写、项目推进、数据分析和产品迭代。要求：理解用户场景和业务目标，能拆解需求优先级，具备基础数据意识、沟通协作能力和结构化表达能力；能讲清一个产品/项目的背景、目标、方案、指标和复盘。加分项：有产品项目、运营增长、数据分析、原型设计或校园产品实践经验。",
+  uncertain:
+    "通用互联网实习岗位 JD：希望候选人具备清晰的学习能力、项目实践经历、基础技术/业务理解和沟通协作能力。面试会重点考察自我介绍、项目经历、个人贡献、岗位动机、基础知识、问题解决能力和复盘能力。建议先选择后端、前端、数据分析、算法或产品中的一个主攻方向，以便生成更具体的面试题。",
+};
+
 const state = {
   selectedRole: "backend",
   selectedLevel: "基础",
   selectedType: "全部",
+  jdAutoFilled: true,
   diagnosis: null,
   questionBank: [],
   selectedQuestion: null,
@@ -52,14 +68,17 @@ const state = {
 const storageKey = "mianshicang_mvp_history";
 let activeRecorder = null;
 let activeRecognition = null;
+let activeRecognitionSession = null;
 let toastTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 document.addEventListener("DOMContentLoaded", () => {
+  configurePdfWorker();
   state.history = readHistory();
   renderRoleGrid();
+  applyDefaultJdTemplate({ force: true });
   bindEvents();
   renderHistory();
   renderEmptyDiagnosis();
@@ -71,6 +90,10 @@ function bindEvents() {
   $("#fillDemoBtn").addEventListener("click", fillDemo);
   $("#resumeFile").addEventListener("change", (event) => handleFile(event, "#resumeText", "#resumeFileName"));
   $("#jdFile").addEventListener("change", (event) => handleFile(event, "#jdText", "#jdFileName"));
+  $("#jdText").addEventListener("input", () => {
+    state.jdAutoFilled = false;
+    updateDefaultJdHint("已使用你填写或识别的 JD 内容。切换岗位不会覆盖这段文本。");
+  });
   $("#timelineSelect").addEventListener("change", persistLightState);
   $("#stageSelect").addEventListener("change", persistLightState);
 
@@ -116,6 +139,7 @@ function renderRoleGrid() {
   $$(".role-card").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedRole = button.dataset.role;
+      applyDefaultJdTemplate({ force: state.jdAutoFilled || !$("#jdText").value.trim() });
       renderRoleGrid();
       persistLightState();
     });
@@ -133,40 +157,149 @@ function fillDemo() {
     "计算机科学与技术专业，大三。项目经历：电商推荐系统，使用 Java、Spring Boot、MySQL、Redis 实现商品查询、推荐结果缓存和用户行为记录。我负责商品接口、Redis 缓存设计、MySQL 表结构设计，并优化了推荐接口响应时间。竞赛经历：蓝桥杯省二。熟悉 Java 基础、数据库、操作系统、计算机网络，做过课程项目和实验室项目，目前没有正式大厂实习经历。";
   $("#jdText").value =
     "岗位：后端开发实习生。要求熟悉 Java 基础、Spring Boot、MySQL、Redis，有良好的数据结构与算法基础，了解 HTTP、TCP/IP、操作系统基础。有项目开发经验，能说明技术选型、接口设计、数据库设计和性能优化。加分项：了解缓存一致性、消息队列、分布式系统基础。";
+  state.jdAutoFilled = false;
+  updateDefaultJdHint("已载入演示数据。这个按钮用于快速体验完整流程，不代表真实后端服务。");
   generateWorkspace();
 }
 
-function handleFile(event, textareaSelector, labelSelector) {
+function configurePdfWorker() {
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+}
+
+function applyDefaultJdTemplate({ force = false } = {}) {
+  const jdText = $("#jdText");
+  const role = roles.find((item) => item.id === state.selectedRole) || roles[0];
+  if (!force && jdText.value.trim()) return;
+  jdText.value = defaultJdTemplates[role.id] || defaultJdTemplates.uncertain;
+  $("#jobTitle").value = $("#jobTitle").value.trim() || `${role.label}实习生`;
+  state.jdAutoFilled = true;
+  updateDefaultJdHint(`已自动填入「${role.label}」通用 JD。你可以上传截图或粘贴真实 JD 补充特定信息。`);
+}
+
+function updateDefaultJdHint(message) {
+  const hint = $("#defaultJdHint");
+  if (hint) hint.textContent = message;
+}
+
+async function handleFile(event, textareaSelector, labelSelector) {
   const file = event.target.files[0];
   if (!file) return;
   const label = $(labelSelector);
   label.textContent = file.name;
   const lowerName = file.name.toLowerCase();
   const isTextLike = lowerName.endsWith(".txt") || lowerName.endsWith(".md") || file.type.startsWith("text/");
+  const isPdf = lowerName.endsWith(".pdf") || file.type === "application/pdf";
+  const isImage = file.type.startsWith("image/") || /\.(png|jpe?g|webp|bmp)$/i.test(lowerName);
 
-  if (!isTextLike) {
-    showToast("当前静态 MVP 已记录文件名。PDF、DOCX、图片 OCR 需要后端服务，建议先粘贴文本继续体验。");
+  if (isTextLike) {
+    const text = await readFileAsText(file);
+    appendExtractedText(textareaSelector, text);
+    showToast("文件文本已读取，可继续生成诊断。");
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = () => {
-    $(textareaSelector).value = String(reader.result || "");
-    showToast("文件文本已读取，可继续生成诊断。");
-  };
-  reader.onerror = () => showToast("文件读取失败，请改用文本粘贴。");
-  reader.readAsText(file, "utf-8");
+  if (isPdf) {
+    try {
+      showToast("正在提取 PDF 文本。扫描版 PDF 可能需要转图片 OCR。");
+      const text = await extractPdfText(file);
+      if (text.trim()) {
+        appendExtractedText(textareaSelector, text);
+        showToast("PDF 文本已提取。");
+      } else {
+        showToast("没有从 PDF 中提取到文本。若是扫描版，请上传截图或粘贴文字。");
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("PDF 提取失败，请粘贴文本或后续接入服务端 PDF 解析。");
+    }
+    return;
+  }
+
+  if (isImage) {
+    try {
+      showToast("正在 OCR 识别图片，首次加载会稍慢。");
+      const text = await recognizeImageText(file);
+      appendExtractedText(textareaSelector, text);
+      showToast("图片 OCR 完成，请检查识别文本是否准确。");
+    } catch (error) {
+      console.error(error);
+      showToast("图片 OCR 失败，请粘贴文本或确认网络可以加载 OCR 库。");
+    }
+    return;
+  }
+
+  showToast("当前文件类型暂不支持自动解析，请复制文本粘贴到输入框。");
 }
 
-function generateWorkspace() {
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file, "utf-8");
+  });
+}
+
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function extractPdfText(file) {
+  if (!window.pdfjsLib) throw new Error("pdf.js is not loaded");
+  const buffer = await readFileAsArrayBuffer(file);
+  const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
+  const pages = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    pages.push(content.items.map((item) => item.str).join(" "));
+  }
+  return pages.join("\n\n");
+}
+
+async function recognizeImageText(file) {
+  if (!window.Tesseract) throw new Error("Tesseract.js is not loaded");
+  const result = await window.Tesseract.recognize(file, "chi_sim+eng", {
+    logger: (message) => {
+      if (message.status === "recognizing text") {
+        const percent = Math.round((message.progress || 0) * 100);
+        showToast(`OCR 识别中 ${percent}%`);
+      }
+    },
+  });
+  return result.data.text || "";
+}
+
+function appendExtractedText(textareaSelector, text) {
+  const textarea = $(textareaSelector);
+  const cleanText = String(text || "").trim();
+  if (!cleanText) return;
+  textarea.value = textarea.value.trim() ? `${textarea.value.trim()}\n\n${cleanText}` : cleanText;
+  if (textareaSelector === "#jdText") {
+    state.jdAutoFilled = false;
+    updateDefaultJdHint("已将识别文本补充到 JD。请快速检查 OCR 是否有错字。");
+  }
+}
+
+async function generateWorkspace() {
   const materials = getMaterials();
   if (!materials.resumeText.trim() && !materials.jdText.trim() && !materials.jobTitle.trim()) {
     showToast("请至少填写岗位名称、JD 或简历材料中的一项。");
     return;
   }
 
-  state.diagnosis = analyzeMaterials(materials);
-  state.questionBank = generateQuestionBank(materials, state.diagnosis);
+  showToast("正在生成诊断和题库。若未配置大模型，将使用本地规则。");
+  const aiResult = await callAiTask("diagnoseAndQuestions", { materials });
+  const localDiagnosis = analyzeMaterials(materials);
+  state.diagnosis = normalizeDiagnosis(aiResult?.diagnosis, localDiagnosis);
+  state.questionBank = normalizeQuestionBank(aiResult?.questionBank, materials, state.diagnosis);
   state.selectedQuestion = state.questionBank[0] || null;
   state.selectedLevel = "基础";
   state.selectedType = "全部";
@@ -182,6 +315,57 @@ function generateWorkspace() {
   $("#heroQuestionCount").textContent = state.questionBank.length;
   showToast("已生成岗位匹配诊断和个性化题库。");
   location.hash = "#diagnosis";
+}
+
+async function callAiTask(task, payload) {
+  try {
+    const response = await fetch("/api/ai/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task, payload }),
+    });
+    if (!response.ok) return null;
+    const result = await response.json();
+    return result.ok ? result.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeDiagnosis(aiDiagnosis, localDiagnosis) {
+  if (!aiDiagnosis || typeof aiDiagnosis !== "object") return localDiagnosis;
+  return {
+    ...localDiagnosis,
+    score: Number.isFinite(Number(aiDiagnosis.score)) ? Math.max(20, Math.min(98, Number(aiDiagnosis.score))) : localDiagnosis.score,
+    strengths: arrayOrFallback(aiDiagnosis.strengths, localDiagnosis.strengths).slice(0, 5),
+    risks: arrayOrFallback(aiDiagnosis.risks, localDiagnosis.risks).slice(0, 5),
+    priorities: arrayOrFallback(aiDiagnosis.priorities, localDiagnosis.priorities).slice(0, 5),
+  };
+}
+
+function normalizeQuestionBank(aiQuestionBank, materials, diagnosis) {
+  const localBank = generateQuestionBank(materials, diagnosis);
+  if (!Array.isArray(aiQuestionBank) || aiQuestionBank.length < 10) return localBank;
+  const normalized = aiQuestionBank
+    .filter((item) => item && item.text)
+    .map((item, index) => ({
+      id: `ai-q-${index + 1}`,
+      level: ["基础", "进阶", "挑战"].includes(item.level) ? item.level : index < 10 ? "基础" : index < 22 ? "进阶" : "挑战",
+      type: item.type || "项目追问",
+      role: item.role || "技术/业务面",
+      text: String(item.text),
+      intent: item.intent || "考察岗位匹配和表达质量",
+      evidence: item.evidence || materials.jobTitle,
+      points: arrayOrFallback(item.points, ["背景", "个人行动", "结果", "复盘"]).slice(0, 6),
+      pitfalls: arrayOrFallback(item.pitfalls, ["回答泛泛", "缺少个人贡献"]).slice(0, 4),
+      followUps: arrayOrFallback(item.followUps, ["请补充一个更具体的证据。"]).slice(0, 3),
+      duration: item.duration || (item.level === "挑战" ? "120-180 秒" : "90-150 秒"),
+    }));
+  return normalized.length >= 20 ? normalized : localBank;
+}
+
+function arrayOrFallback(value, fallback) {
+  return Array.isArray(value) && value.length ? value.map((item) => String(item)) : fallback;
 }
 
 function getMaterials() {
@@ -484,7 +668,7 @@ function showQuestionHint() {
   `;
 }
 
-function generatePracticeFeedback() {
+async function generatePracticeFeedback() {
   const question = state.selectedQuestion;
   const answer = $("#practiceAnswer").value.trim();
   if (!question) {
@@ -496,11 +680,23 @@ function generatePracticeFeedback() {
     return;
   }
 
-  const feedback = scoreAnswer(answer, question, getMaterials().role);
+  const materials = getMaterials();
+  const aiResult = await callAiTask("feedback", { materials, question, answer });
+  const feedback = normalizeFeedback(aiResult?.feedback, scoreAnswer(answer, question, materials.role));
   state.practiceRecords.push({ question, answer, feedback, createdAt: new Date().toISOString() });
   const box = $("#practiceFeedback");
   box.hidden = false;
   box.innerHTML = renderFeedback(feedback);
+}
+
+function normalizeFeedback(aiFeedback, localFeedback) {
+  if (!aiFeedback || typeof aiFeedback !== "object") return localFeedback;
+  return {
+    score: Number.isFinite(Number(aiFeedback.score)) ? Math.max(20, Math.min(98, Number(aiFeedback.score))) : localFeedback.score,
+    strengths: arrayOrFallback(aiFeedback.strengths, localFeedback.strengths).slice(0, 5),
+    suggestions: arrayOrFallback(aiFeedback.suggestions, localFeedback.suggestions).slice(0, 6),
+    followUp: aiFeedback.followUp ? String(aiFeedback.followUp) : localFeedback.followUp,
+  };
 }
 
 function scoreAnswer(answer, question, role) {
@@ -711,7 +907,7 @@ function showInterviewHint() {
   appendMessage("interviewer", "轻提示", `可以按这个结构回答：${interview.currentQuestion.points.join("、")}。不要背模板，尽量使用你的真实经历。`);
 }
 
-function finishInterview() {
+async function finishInterview() {
   const interview = state.interview;
   if (!interview || !interview.turns.length) {
     showToast("还没有可生成报告的面试记录。");
@@ -719,11 +915,25 @@ function finishInterview() {
   }
   interview.active = false;
   $("#roomTitle").textContent = "模拟已结束";
-  const report = buildReport(interview);
+  const localReport = buildReport(interview);
+  const aiResult = await callAiTask("report", { materials: getMaterials(), interview, localReport });
+  const report = normalizeReport(aiResult?.report, localReport);
   renderReport(report);
   saveReport(report);
   showToast("报告已生成。");
   location.hash = "#report";
+}
+
+function normalizeReport(aiReport, localReport) {
+  if (!aiReport || typeof aiReport !== "object") return localReport;
+  return {
+    ...localReport,
+    score: Number.isFinite(Number(aiReport.score)) ? Math.max(20, Math.min(98, Number(aiReport.score))) : localReport.score,
+    strengths: arrayOrFallback(aiReport.strengths, localReport.strengths).slice(0, 6),
+    risks: arrayOrFallback(aiReport.risks, localReport.risks).slice(0, 6),
+    suggestions: arrayOrFallback(aiReport.suggestions, localReport.suggestions).slice(0, 8),
+    actionPlan: aiReport.actionPlan && typeof aiReport.actionPlan === "object" ? { ...localReport.actionPlan, ...aiReport.actionPlan } : localReport.actionPlan,
+  };
 }
 
 function buildReport(interview) {
@@ -913,6 +1123,7 @@ async function toggleVoiceInput(textareaSelector, buttonSelector) {
     if (activeRecognition) {
       activeRecognition.stop();
       activeRecognition = null;
+      activeRecognitionSession = null;
     }
     button.textContent = "语音作答";
     showToast("录音已停止。若浏览器支持语音识别，转写会自动填入回答框。");
@@ -947,18 +1158,29 @@ function startSpeechRecognition(textareaSelector) {
   }
 
   const recognition = new SpeechRecognition();
+  const textarea = $(textareaSelector);
+  const baseText = textarea.value.trim();
+  activeRecognitionSession = { textareaSelector, baseText, finalTranscript: "" };
   recognition.lang = "zh-CN";
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.onresult = (event) => {
-    let text = "";
+    let interimTranscript = "";
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
-      text += event.results[index][0].transcript;
+      const transcript = event.results[index][0].transcript;
+      if (event.results[index].isFinal) {
+        activeRecognitionSession.finalTranscript += transcript;
+      } else {
+        interimTranscript += transcript;
+      }
     }
-    const textarea = $(textareaSelector);
-    textarea.value = `${textarea.value.replace(/\s*$/, "")}${text}`.trim();
+    textarea.value = [baseText, activeRecognitionSession.finalTranscript, interimTranscript].filter(Boolean).join("\n").trim();
   };
   recognition.onerror = () => showToast("语音转写失败，可继续使用文字输入。");
+  recognition.onend = () => {
+    activeRecognition = null;
+    activeRecognitionSession = null;
+  };
   recognition.start();
   activeRecognition = recognition;
 }

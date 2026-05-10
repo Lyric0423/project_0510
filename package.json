@@ -1,0 +1,13 @@
+{
+  "name": "mianshicang-ai-mvp",
+  "version": "0.2.0",
+  "private": true,
+  "description": "面试舱 AI 大厂实习模拟面试官 MVP",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check app.js && node --check server.js && node --check prompts.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
