@@ -67,14 +67,39 @@ const state = {
   history: [],
   voiceConfig: null,
   currentReport: null,
+  generatedMaterialsSignature: "",
+  profile: {
+    uploads: [],
+    plans: [],
+    notes: [],
+    target: {},
+  },
+  savedQuestionNotes: {
+    wrongbook: [],
+    done: [],
+  },
+  lastPracticeFeedback: null,
+  generationStatus: {
+    active: false,
+    messageIndex: 0,
+  },
 };
 
 const storageKey = "mianshicang_mvp_history";
 const draftStorageKey = "mianshicang_mvp_draft_v3";
-const validViews = new Set(["home", "setup", "diagnosis", "questions", "interview", "report"]);
+const profileStorageKey = "mianshicang_profile_v1";
+const wrongbookStorageKey = "mianshicang_wrongbook_v1";
+const validViews = new Set(["home", "setup", "diagnosis", "questions", "interview", "report", "profile"]);
 const pdfJsUrl = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 const pdfWorkerUrl = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 const tesseractUrl = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+const generationInsights = [
+  "如果你是面试官，你想要招什么样的人？",
+  "简历里写“参与项目”，那你自己先回答一句：你具体做了什么？",
+  "没有 QPS、没有 RT、没有转化率，在大厂眼里，这不叫优化。",
+  "别背八股文，我们要的是会思考的人。",
+  "实习面试很短，红线很多。",
+];
 let activeVoiceSession = null;
 let activeRecognition = null;
 let activeRecognitionSession = null;
@@ -84,6 +109,8 @@ let ttsAudio = null;
 let candidateCameraStream = null;
 let pdfJsReady = null;
 let tesseractReady = null;
+let generationProgressTimer = null;
+let generationInsightTimer = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -92,11 +119,14 @@ document.addEventListener("DOMContentLoaded", () => {
   configurePdfWorker();
   bindEvents();
   state.history = readHistory();
+  state.profile = readProfile();
+  state.savedQuestionNotes = readQuestionMemory();
   restoreDraft();
   renderRoleGrid();
   applyDefaultJdTemplate({ force: !$("#jdText").value.trim() });
   updateInterviewTypeForRole();
   renderHistory();
+  renderProfile();
   renderEmptyDiagnosis();
   renderQuestions();
   showView(getInitialView(), { replaceHash: true, scroll: false });
@@ -113,6 +143,8 @@ function bindEvents() {
     showView(getViewFromHash() || "home", { updateHash: false });
   });
   $("#generateBtn").addEventListener("click", generateWorkspace);
+  $("#diagnosisGenerateBtn").addEventListener("click", generateWorkspace);
+  $("#questionsGenerateBtn").addEventListener("click", generateWorkspace);
   $("#fillDemoBtn").addEventListener("click", fillDemo);
   $("#resumeFile").addEventListener("change", (event) => handleFile(event, "#resumeText", "#resumeFileName"));
   $("#jdFile").addEventListener("change", (event) => handleFile(event, "#jdText", "#jdFileName"));
@@ -121,7 +153,13 @@ function bindEvents() {
     updateDefaultJdHint("已使用你填写或识别的 JD 内容。切换岗位不会覆盖这段文本。");
     persistDraft();
   });
-  ["#resumeText", "#jobTitle", "#companyName"].forEach((selector) => $(selector).addEventListener("input", persistDraft));
+  ["#resumeText", "#jobTitle", "#companyName"].forEach((selector) =>
+    $(selector).addEventListener("input", () => {
+      persistDraft();
+      updateDiagnosisEmptyHint();
+      updateQuestionsEmptyHint();
+    }),
+  );
   $("#timelineSelect").addEventListener("change", persistDraft);
   $("#stageSelect").addEventListener("change", () => {
     updateInterviewTypeForRole();
@@ -145,6 +183,9 @@ function bindEvents() {
   $("#hintBtn").addEventListener("click", showQuestionHint);
   $("#feedbackBtn").addEventListener("click", generatePracticeFeedback);
   $("#recordBtn").addEventListener("click", () => toggleVoiceInput("#practiceAnswer", "#recordBtn"));
+  $("#saveQuestionNoteBtn").addEventListener("click", saveCurrentQuestionNote);
+  $("#saveWrongQuestionBtn").addEventListener("click", saveCurrentQuestionWrongbook);
+  $("#startInterviewFromQuestionBtn").addEventListener("click", startInterviewFromQuestionBank);
 
   $("#startInterviewBtn").addEventListener("click", startInterview);
   $("#finishInterviewBtn").addEventListener("click", finishInterview);
@@ -164,6 +205,8 @@ function bindEvents() {
   $("#exportDocxBtn").addEventListener("click", () => exportReportFile("docx"));
   $("#exportPdfBtn").addEventListener("click", () => exportReportFile("pdf"));
   $("#clearHistoryBtn").addEventListener("click", clearHistory);
+  $("#savePlanBtn").addEventListener("click", saveProfilePlan);
+  $("#saveProfileNoteBtn").addEventListener("click", saveProfileNote);
 }
 
 function renderRoleGrid() {
@@ -242,7 +285,7 @@ function fillDemo() {
   $("#jdText").value =
     "岗位：后端开发实习生。要求熟悉 Java 基础、Spring Boot、MySQL、Redis，有良好的数据结构与算法基础，了解 HTTP、TCP/IP、操作系统基础。有项目开发经验，能说明技术选型、接口设计、数据库设计和性能优化。加分项：了解缓存一致性、消息队列、分布式系统基础。";
   state.jdAutoFilled = false;
-  updateDefaultJdHint("已载入演示数据。这个按钮用于快速体验完整流程，不代表真实后端服务。");
+  updateDefaultJdHint("已载入示例简历和示例 JD，用来快速看看系统会如何分析；正式使用时请换成你的真实材料。");
   updateInterviewTypeForRole();
   persistDraft();
   generateWorkspace();
@@ -384,7 +427,7 @@ async function handleFile(event, textareaSelector, labelSelector) {
 
   if (isTextLike) {
     const text = await readFileAsText(file);
-    appendExtractedText(textareaSelector, text);
+    appendExtractedText(textareaSelector, text, file.name);
     showToast("文件文本已读取，可继续生成诊断。");
     return;
   }
@@ -394,7 +437,7 @@ async function handleFile(event, textareaSelector, labelSelector) {
       showToast("正在提取 PDF 文本。若文字提取失败会自动尝试页面 OCR。");
       const text = await extractPdfText(file);
       if (text.trim()) {
-        appendExtractedText(textareaSelector, text);
+        appendExtractedText(textareaSelector, text, file.name);
         showToast("PDF 文本已提取。");
       } else {
         showToast("没有从 PDF 中提取到文本。若是扫描版，请上传截图或粘贴文字。");
@@ -410,7 +453,7 @@ async function handleFile(event, textareaSelector, labelSelector) {
     try {
       showToast("正在 OCR 识别图片，首次加载会稍慢。");
       const text = await recognizeImageText(file);
-      appendExtractedText(textareaSelector, text);
+      appendExtractedText(textareaSelector, text, file.name);
       showToast("图片 OCR 完成，请检查识别文本是否准确。");
     } catch (error) {
       console.error(error);
@@ -504,45 +547,86 @@ async function recognizeImageText(file) {
   return result.data.text || "";
 }
 
-function appendExtractedText(textareaSelector, text) {
+function appendExtractedText(textareaSelector, text, sourceName = "上传材料") {
   const textarea = $(textareaSelector);
   const cleanText = String(text || "").trim();
   if (!cleanText) return;
-  textarea.value = textarea.value.trim() ? `${textarea.value.trim()}\n\n${cleanText}` : cleanText;
+  const shouldReplace = shouldReplaceExtractedText(textareaSelector, textarea.value);
+  textarea.value = shouldReplace ? cleanText : `${textarea.value.trim()}\n\n${cleanText}`.trim();
   if (textareaSelector === "#jdText") {
     state.jdAutoFilled = false;
-    updateDefaultJdHint("已将识别文本补充到 JD。请快速检查 OCR 是否有错字。");
+    updateDefaultJdHint(shouldReplace ? "已用识别文本替换通用 JD。请快速检查 OCR 是否有错字。" : "已将识别文本补充到 JD。请快速检查 OCR 是否有错字。");
   }
+  recordUploadedMaterial(sourceName, textareaSelector, cleanText, shouldReplace);
+  persistDraft();
 }
 
-async function generateWorkspace() {
+function shouldReplaceExtractedText(textareaSelector, currentValue) {
+  const current = normalizeSignatureText(currentValue);
+  if (!current) return true;
+  if (textareaSelector === "#jdText") {
+    const defaultTexts = Object.values(defaultJdTemplates).map(normalizeSignatureText);
+    return state.jdAutoFilled || defaultTexts.includes(current);
+  }
+  if (textareaSelector === "#resumeText") {
+    return /电商推荐系统/.test(current) && /蓝桥杯省二/.test(current) && /没有正式大厂实习经历/.test(current);
+  }
+  return false;
+}
+
+async function generateWorkspace(options = {}) {
+  const { navigateToDiagnosis = true } = options;
   const materials = getMaterials();
   if (!materials.resumeText.trim() && !materials.jdText.trim() && !materials.jobTitle.trim()) {
     showToast("请至少填写岗位名称、JD 或简历材料中的一项。");
+    resetGenerationProgress();
     return;
   }
 
-  showToast("正在生成诊断和题库。若 DeepSeek 不可用，将使用本地规则。");
-  const aiResult = await callAiTask("diagnoseAndQuestions", { materials }, "题库生成已使用本地规则兜底。");
+  const signature = buildMaterialsSignature(materials);
+  if (hasReusableWorkspace(signature)) {
+    resetGenerationProgress();
+    hideGenerationPreview();
+    renderGeneratedWorkspace();
+    showToast("材料没有变化，已直接进入上次生成的诊断结果。");
+    if (navigateToDiagnosis) showView("diagnosis");
+    return;
+  }
+
+  updateProfileTargetFromMaterials(materials);
+  if (navigateToDiagnosis) showView("diagnosis");
+  setDiagnosisGridVisibility(false);
+  startGenerationProgress();
+  updateGenerationProgress(12, "正在读取简历、JD 和岗位方向");
   const localDiagnosis = analyzeMaterials(materials);
+  state.diagnosis = normalizeDiagnosis(null, localDiagnosis);
+  state.questionBank = generateQuestionBank(materials, state.diagnosis);
+  state.selectedQuestion = state.questionBank[0] || null;
+  state.selectedLevel = "基础";
+  state.selectedType = "全部";
+  renderGeneratedWorkspace();
+  renderGenerationPreview(materials, state.diagnosis, state.questionBank);
+  setDiagnosisGridVisibility(false);
+  showToast("正在生成诊断、题库和模拟面试准备内容。");
+  await wait(180);
+  updateGenerationProgress(34, "正在生成岗位匹配诊断");
+  const aiResult = await callAiTask("diagnoseAndQuestions", { materials }, "题库生成已使用本地规则兜底。");
+  updateGenerationProgress(78, "正在整理题库和模拟面试入口");
   state.diagnosis = normalizeDiagnosis(aiResult?.diagnosis, localDiagnosis);
   state.questionBank = normalizeQuestionBank(aiResult?.questionBank, materials, state.diagnosis);
   state.selectedQuestion = state.questionBank[0] || null;
   state.selectedLevel = "基础";
   state.selectedType = "全部";
+  state.generatedMaterialsSignature = signature;
 
-  $$(".segmented button").forEach((button) => {
-    button.classList.toggle("active", button.dataset.level === "基础");
-  });
-
-  renderDiagnosis(state.diagnosis);
-  populateTypeFilter();
-  renderQuestions();
-  renderSelectedQuestion();
-  $("#heroQuestionCount").textContent = state.questionBank.length;
-  showToast("已生成岗位匹配诊断和个性化题库。");
+  renderGeneratedWorkspace();
+  setDiagnosisGridVisibility(true);
+  updateGenerationProgress(96, "正在展示诊断结果");
   persistDraft();
-  showView("diagnosis");
+  await finishGenerationProgress();
+  hideGenerationPreview();
+  showToast("已生成诊断、题库和模拟面试准备内容。");
+  if (navigateToDiagnosis) showView("diagnosis");
 }
 
 async function callAiTask(task, payload, fallbackMessage = "已使用本地规则兜底。") {
@@ -567,14 +651,206 @@ async function callAiTask(task, payload, fallbackMessage = "已使用本地规�
   }
 }
 
+function hasReusableWorkspace(signature) {
+  return Boolean(
+    signature &&
+      state.generatedMaterialsSignature === signature &&
+      state.diagnosis &&
+      Array.isArray(state.questionBank) &&
+      state.questionBank.length,
+  );
+}
+
+function renderGeneratedWorkspace() {
+  $$(".segmented button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.level === "基础");
+  });
+  updateDiagnosisEmptyHint();
+  updateQuestionsEmptyHint();
+  renderDiagnosis(state.diagnosis);
+  populateTypeFilter();
+  renderQuestions();
+  renderSelectedQuestion();
+  $("#heroQuestionCount").textContent = state.questionBank.length;
+}
+
+function setDiagnosisGridVisibility(visible) {
+  const grid = $(".diagnosis-grid");
+  if (grid) grid.hidden = !visible;
+  updateDiagnosisEmptyHint();
+}
+
+function updateDiagnosisEmptyHint() {
+  const hint = $("#diagnosisEmptyHint");
+  if (!hint) return;
+  const hasResult = Boolean(state.diagnosis && state.questionBank.length);
+  const hasResume = Boolean($("#resumeText")?.value.trim());
+  hint.textContent = hasResult
+    ? "已生成个性化诊断；如果简历或 JD 有变化，可以重新生成。"
+    : hasResume
+      ? "已读取简历，可以点击右侧生成诊断。"
+      : "请先上传简历，获得个性化分析。";
+}
+
+function updateQuestionsEmptyHint() {
+  const hint = $("#questionsEmptyHint");
+  if (!hint) return;
+  const hasPersonalizedBank = Boolean(state.questionBank.length && state.generatedMaterialsSignature);
+  const hasResume = Boolean($("#resumeText")?.value.trim());
+  hint.textContent = hasPersonalizedBank
+    ? "已生成基于你简历和 JD 的个性化题库。"
+    : hasResume
+      ? "当前为示例题库；已读取简历，点击右侧生成个性化题库。"
+      : "此为示例题库，上传您的简历来获得个性化题库。";
+}
+
+function renderGenerationPreview(materials, diagnosis, questions) {
+  const preview = $("#generationPreview");
+  if (!preview) return;
+  const roleLabel = materials.role?.label || "目标岗位";
+  const tips = getRolePreviewTips(materials.role?.id, diagnosis);
+  const previewQuestions = (questions || []).slice(0, 5);
+  $("#generationPreviewTitle").textContent = `${roleLabel}先看这几个风险点`;
+  $("#generationPreviewTips").innerHTML = tips.map((item) => `<li>${escapeHTML(item)}</li>`).join("");
+  $("#generationPreviewQuestions").innerHTML = previewQuestions
+    .map(
+      (question) => `
+        <div class="preview-question-item">
+          <span>${escapeHTML(question.type || question.level)}</span>
+          <strong>${escapeHTML(question.text)}</strong>
+        </div>
+      `,
+    )
+    .join("");
+  preview.hidden = false;
+}
+
+function hideGenerationPreview() {
+  const preview = $("#generationPreview");
+  if (preview) preview.hidden = true;
+  setDiagnosisGridVisibility(true);
+}
+
+function getRolePreviewTips(roleId, diagnosis) {
+  const common = [
+    "先把“我具体做了什么”说清楚，别只讲团队成果。",
+    "结果不要只说优化了，尽量补一个真实指标或验证方式。",
+  ];
+  const map = {
+    backend: ["后端面会追接口、数据库、缓存、异常处理和线上排查。", "项目里用了 Redis/MySQL，就要能讲清为什么用、怎么兜底。"],
+    frontend: ["前端面会追浏览器、组件设计、性能优化和工程化。", "不要只说会 React/Vue，要讲清状态、渲染、联调和性能指标。"],
+    data: ["数据面会追指标口径、SQL、分析假设和业务动作。", "图表不是结果，能推动什么决策才是结果。"],
+    algorithm: ["算法面会追数据集、baseline、指标、实验设计和工程落地。", "别只讲模型名，要讲为什么有效、怎么验证、哪里失败。"],
+    product: ["产品面会追用户场景、需求优先级、指标和项目推动。", "别只讲想法，要讲用户证据、取舍逻辑和上线验证。"],
+    uncertain: ["方向不明确时，面试官会先判断你的主线是否稳定。", "建议先选一个主攻岗位，否则回答容易散。"],
+  };
+  const risk = diagnosis?.risks?.[0] ? [`当前最容易被追问：${diagnosis.risks[0]}`] : [];
+  return [...(map[roleId] || map.uncertain), ...common, ...risk].slice(0, 5);
+}
+
+function buildMaterialsSignature(materials) {
+  return JSON.stringify({
+    roleId: materials.role?.id || "",
+    timeline: materials.timeline || "",
+    stage: materials.stage || "",
+    resumeText: normalizeSignatureText(materials.resumeText),
+    jdText: normalizeSignatureText(materials.jdText),
+    jobTitle: normalizeSignatureText(materials.jobTitle),
+    companyName: normalizeSignatureText(materials.companyName),
+  });
+}
+
+function normalizeSignatureText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function startGenerationProgress() {
+  const progress = $("#generationProgress");
+  const button = $("#generateBtn");
+  if (!progress) return;
+  progress.hidden = false;
+  state.generationStatus.active = true;
+  state.generationStatus.messageIndex = 0;
+  button.disabled = true;
+  button.textContent = "生成中";
+  updateGenerationProgress(5, "正在生成中，请稍候");
+  updateGenerationInsight();
+  clearInterval(generationProgressTimer);
+  clearInterval(generationInsightTimer);
+  let current = 5;
+  generationProgressTimer = window.setInterval(() => {
+    current = Math.min(current + Math.random() * 5 + 1.6, 94);
+    updateGenerationProgress(current, current > 62 ? "正在整理题库和模拟面试入口" : "正在生成岗位匹配诊断");
+  }, 420);
+  generationInsightTimer = window.setInterval(updateGenerationInsight, 1800);
+}
+
+function updateGenerationInsight() {
+  const insight = $("#generationInsight");
+  if (!insight) return;
+  const message = generationInsights[state.generationStatus.messageIndex % generationInsights.length];
+  insight.textContent = message;
+  state.generationStatus.messageIndex += 1;
+}
+
+function updateGenerationProgress(percent, text) {
+  const progressBar = $("#generationProgressBar");
+  const progressText = $("#generationProgressText");
+  const progressPercent = $("#generationProgressPercent");
+  const value = Math.max(0, Math.min(100, Math.round(percent)));
+  if (progressBar) progressBar.style.width = `${value}%`;
+  if (progressText) progressText.textContent = text;
+  if (progressPercent) progressPercent.textContent = `${value}%`;
+}
+
+async function finishGenerationProgress() {
+  clearInterval(generationProgressTimer);
+  clearInterval(generationInsightTimer);
+  state.generationStatus.active = false;
+  updateGenerationProgress(100, "已完成，正在展示诊断结果");
+  await wait(420);
+  const progress = $("#generationProgress");
+  if (progress) progress.hidden = true;
+  const button = $("#generateBtn");
+  if (button) {
+    button.disabled = false;
+    button.textContent = "下一步";
+  }
+}
+
+function resetGenerationProgress() {
+  clearInterval(generationProgressTimer);
+  clearInterval(generationInsightTimer);
+  state.generationStatus.active = false;
+  const progress = $("#generationProgress");
+  const button = $("#generateBtn");
+  if (progress) progress.hidden = true;
+  hideGenerationPreview();
+  if (button) {
+    button.disabled = false;
+    button.textContent = "下一步";
+  }
+  updateGenerationProgress(0, "正在生成中");
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 function normalizeDiagnosis(aiDiagnosis, localDiagnosis) {
-  if (!aiDiagnosis || typeof aiDiagnosis !== "object") return localDiagnosis;
-  return {
+  const compactLocal = {
     ...localDiagnosis,
-    score: Number.isFinite(Number(aiDiagnosis.score)) ? Math.max(20, Math.min(98, Number(aiDiagnosis.score))) : localDiagnosis.score,
-    strengths: arrayOrFallback(aiDiagnosis.strengths, localDiagnosis.strengths).slice(0, 5),
-    risks: arrayOrFallback(aiDiagnosis.risks, localDiagnosis.risks).slice(0, 5),
-    priorities: arrayOrFallback(aiDiagnosis.priorities, localDiagnosis.priorities).slice(0, 5),
+    strengths: localDiagnosis.strengths.slice(0, 3),
+    risks: localDiagnosis.risks.slice(0, 3),
+    priorities: localDiagnosis.priorities.slice(0, 3),
+  };
+  if (!aiDiagnosis || typeof aiDiagnosis !== "object") return compactLocal;
+  return {
+    ...compactLocal,
+    score: Number.isFinite(Number(aiDiagnosis.score)) ? Math.max(20, Math.min(98, Number(aiDiagnosis.score))) : compactLocal.score,
+    strengths: arrayOrFallback(aiDiagnosis.strengths, compactLocal.strengths).slice(0, 3),
+    risks: arrayOrFallback(aiDiagnosis.risks, compactLocal.risks).slice(0, 3),
+    priorities: arrayOrFallback(aiDiagnosis.priorities, compactLocal.priorities).slice(0, 3),
   };
 }
 
@@ -591,8 +867,8 @@ function normalizeQuestionBank(aiQuestionBank, materials, diagnosis) {
       text: String(item.text),
       intent: item.intent || "考察岗位匹配和表达质量",
       evidence: item.evidence || materials.jobTitle,
-      points: arrayOrFallback(item.points, ["背景", "个人行动", "结果", "复盘"]).slice(0, 6),
-      pitfalls: arrayOrFallback(item.pitfalls, ["回答泛泛", "缺少个人贡献"]).slice(0, 4),
+      points: arrayOrFallback(item.points, ["背景", "个人行动", "结果"]).slice(0, 3),
+      pitfalls: arrayOrFallback(item.pitfalls, ["回答泛泛", "缺少个人贡献"]).slice(0, 3),
       followUps: arrayOrFallback(item.followUps, ["请补充一个更具体的证据。"]).slice(0, 3),
       duration: item.duration || (item.level === "挑战" ? "120-180 秒" : "90-150 秒"),
     }));
@@ -677,6 +953,7 @@ function analyzeMaterials(materials) {
 }
 
 function renderEmptyDiagnosis() {
+  updateDiagnosisEmptyHint();
   $("#strengthList").innerHTML = "<li>等待生成后展示岗位优势。</li>";
   $("#riskList").innerHTML = "<li>等待生成后展示面试风险。</li>";
   $("#priorityList").innerHTML = "<li>等待生成后展示准备优先级。</li>";
@@ -820,6 +1097,7 @@ function populateTypeFilter() {
 
 function renderQuestions() {
   const list = $("#questionList");
+  updateQuestionsEmptyHint();
   const questions = state.questionBank.filter((item) => {
     const levelOk = item.level === state.selectedLevel;
     const typeOk = state.selectedType === "全部" || item.type === state.selectedType;
@@ -918,18 +1196,33 @@ async function generatePracticeFeedback() {
   const materials = getMaterials();
   const aiResult = await callAiTask("feedback", { materials, question, answer }, "单题反馈已使用本地规则兜底。");
   const feedback = normalizeFeedback(aiResult?.feedback, scoreAnswer(answer, question, materials.role));
-  state.practiceRecords.push({ question, answer, feedback, createdAt: new Date().toISOString() });
+  const record = { question, answer, feedback, createdAt: new Date().toISOString() };
+  state.practiceRecords.push(record);
+  state.lastPracticeFeedback = record;
+  saveDoneQuestionRecord(record);
   const box = $("#practiceFeedback");
   box.hidden = false;
   box.innerHTML = renderFeedback(feedback);
+  showToast("单题反馈已生成，并已保存到做过的题。");
+}
+
+async function startInterviewFromQuestionBank() {
+  if (!state.questionBank.length) {
+    showToast("请先完成 Step 1，生成诊断和题库。");
+    showView("setup");
+    return;
+  }
+  showView("interview");
+  await wait(120);
+  await startInterview();
 }
 
 function normalizeFeedback(aiFeedback, localFeedback) {
   if (!aiFeedback || typeof aiFeedback !== "object") return localFeedback;
   return {
     score: Number.isFinite(Number(aiFeedback.score)) ? Math.max(20, Math.min(98, Number(aiFeedback.score))) : localFeedback.score,
-    strengths: arrayOrFallback(aiFeedback.strengths, localFeedback.strengths).slice(0, 5),
-    suggestions: arrayOrFallback(aiFeedback.suggestions, localFeedback.suggestions).slice(0, 6),
+    strengths: arrayOrFallback(aiFeedback.strengths, localFeedback.strengths).slice(0, 2),
+    suggestions: arrayOrFallback(aiFeedback.suggestions, localFeedback.suggestions).slice(0, 3),
     followUp: aiFeedback.followUp ? String(aiFeedback.followUp) : localFeedback.followUp,
   };
 }
@@ -992,7 +1285,9 @@ function renderFeedback(feedback) {
 
 async function startInterview() {
   if (!state.questionBank.length) {
-    await generateWorkspace();
+    showToast("请先完成 Step 1，生成诊断和题库。");
+    showView("setup");
+    return;
   }
   if (!state.questionBank.length) return;
   const type = $("#interviewType").value;
@@ -1008,6 +1303,7 @@ async function startInterview() {
     currentQuestion: null,
     questionCount: 0,
     followUps: 0,
+    focusFollowUps: {},
     finalQuestionAsked: false,
   };
   state.interviewNotes = [];
@@ -1016,7 +1312,7 @@ async function startInterview() {
   renderInterviewNotes();
   $("#interviewAnswer").value = "";
   $("#roomTitle").textContent = `${type}进行中`;
-  $("#sideCurrentQuestion").textContent = "AI 面试官正在准备第一道问题。";
+  setInterviewerThinking("AI 面试官正在准备第一道问题。");
   activateSidePanel("overview");
   setMeetingStatus("calling");
   playRingtone();
@@ -1041,8 +1337,10 @@ async function requestAiInterviewQuestion(phase, previousAnswer) {
         maxQuestions: interview.maxQuestions,
         questionCount: interview.questionCount,
         followUps: interview.followUps,
+        focusFollowUps: interview.focusFollowUps,
         currentQuestion: interview.currentQuestion,
         askedQuestions: interview.turns.map((turn) => turn.question?.text).filter(Boolean),
+        askedEvidence: interview.turns.map((turn) => turn.question?.evidence).filter(Boolean),
       },
     },
     "面试提问已使用本地题库兜底。",
@@ -1060,8 +1358,8 @@ function normalizeSingleQuestion(question, phase) {
     text: String(question.text),
     intent: question.intent || "动态追问候选人当前回答",
     evidence: question.evidence || "面试上下文",
-    points: arrayOrFallback(question.points, ["背景", "行动", "结果", "反思"]).slice(0, 6),
-    pitfalls: arrayOrFallback(question.pitfalls, ["回答泛泛", "缺少证据"]).slice(0, 4),
+    points: arrayOrFallback(question.points, ["背景", "行动", "结果"]).slice(0, 3),
+    pitfalls: arrayOrFallback(question.pitfalls, ["回答泛泛", "缺少证据"]).slice(0, 3),
     followUps: arrayOrFallback(question.followUps, ["请补充一个更具体的证据。"]).slice(0, 3),
     duration: question.duration || "90-150 秒",
   };
@@ -1077,9 +1375,10 @@ function buildInterviewQueue(type, maxQuestions) {
   const rolesForType = roleMap[type] || ["技术/业务面"];
   const preferred = state.questionBank.filter((item) => rolesForType.includes(item.role));
   const mixed = preferred.length >= maxQuestions ? preferred : [...preferred, ...state.questionBank];
+  const coverageFirst = prioritizeQuestionCoverage(mixed);
   const unique = [];
   const seen = new Set();
-  for (const question of mixed) {
+  for (const question of coverageFirst) {
     if (!seen.has(question.id)) {
       unique.push(question);
       seen.add(question.id);
@@ -1089,16 +1388,43 @@ function buildInterviewQueue(type, maxQuestions) {
   return unique;
 }
 
+function prioritizeQuestionCoverage(questions) {
+  const buckets = new Map();
+  questions.forEach((question) => {
+    const key = `${question.evidence || "general"}-${question.type || "type"}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(question);
+  });
+  const ordered = [];
+  const bucketValues = Array.from(buckets.values());
+  let index = 0;
+  while (ordered.length < questions.length) {
+    let pushed = false;
+    bucketValues.forEach((bucket) => {
+      if (bucket[index]) {
+        ordered.push(bucket[index]);
+        pushed = true;
+      }
+    });
+    if (!pushed) break;
+    index += 1;
+  }
+  return ordered;
+}
+
 function fallbackQuestion() {
   return q("基础", "自我介绍", "HR面", "请先做一个 1 分钟自我介绍，并说明你想投递的实习方向。", "建立开场上下文", "开场", ["背景", "经历", "岗位", "结论"], ["没有重点"], ["你最希望面试官记住你哪一点？"]);
 }
 
 function addInterviewerQuestion(question, isFollowUp = false) {
   resetCurrentAnswerForNewQuestion();
-  state.interview.currentQuestion = { ...question, isFollowUp };
+  const focusKey = isFollowUp ? state.interview.currentQuestion?.focusKey || getQuestionFocusKey(state.interview.currentQuestion) : getQuestionFocusKey(question);
+  state.interview.currentQuestion = { ...question, isFollowUp, focusKey };
   state.interview.questionCount += 1;
   appendMessage("interviewer", isFollowUp ? "追问" : state.interview.type, question.text);
   $("#sideCurrentQuestion").textContent = question.text;
+  applyQuestionDensity(question.text);
+  $("#callStatus").textContent = "面试中";
   speakInterviewerText(question.text);
   renderInterviewHeader();
 }
@@ -1136,8 +1462,12 @@ async function submitInterviewAnswer() {
     isFollowUp: interview.currentQuestion.isFollowUp,
   });
   $("#interviewAnswer").value = "";
+  showToast("回答成功。");
 
   if (interview.currentQuestion.isFinalQuestion) {
+    $("#roomTitle").textContent = "面试结束！正在生成面试报告";
+    $("#sideCurrentQuestion").textContent = "面试结束！正在生成面试报告";
+    applyQuestionDensity("面试结束！正在生成面试报告");
     await finishInterview({ completion: true });
     return;
   }
@@ -1145,6 +1475,7 @@ async function submitInterviewAnswer() {
   const autoFollow = $("#autoFollowToggle")?.checked !== false;
   const needsFollowUp = autoFollow && shouldAskFollowUp(answer, feedback, interview);
   if (needsFollowUp) {
+    setInterviewerThinking();
     const aiFollowQuestion = await requestAiInterviewQuestion("followUp", answer);
     const followQuestion = aiFollowQuestion || {
       ...interview.currentQuestion,
@@ -1153,6 +1484,8 @@ async function submitInterviewAnswer() {
       role: "压力面",
       followUps: ["请再补充一个更具体的证据。"],
     };
+    followQuestion.focusKey = getQuestionFocusKey(interview.currentQuestion);
+    interview.focusFollowUps[followQuestion.focusKey] = (interview.focusFollowUps[followQuestion.focusKey] || 0) + 1;
     interview.followUps += 1;
     addInterviewerQuestion(followQuestion, true);
     return;
@@ -1163,6 +1496,7 @@ async function submitInterviewAnswer() {
     return;
   }
 
+  setInterviewerThinking();
   const aiNextQuestion = await requestAiInterviewQuestion("next", answer);
   addInterviewerQuestion(aiNextQuestion || interview.queue.shift());
 }
@@ -1170,6 +1504,8 @@ async function submitInterviewAnswer() {
 function shouldAskFollowUp(answer, feedback, interview) {
   if (interview.followUps >= 4) return false;
   if (interview.currentQuestion.isFollowUp) return false;
+  const focusKey = getQuestionFocusKey(interview.currentQuestion);
+  if ((interview.focusFollowUps[focusKey] || 0) >= 1) return false;
   if (interview.questionCount >= interview.maxQuestions - 1) return false;
   if (interview.finalQuestionAsked) return false;
   const answerTooShort = answer.length < 90;
@@ -1177,6 +1513,25 @@ function shouldAskFollowUp(answer, feedback, interview) {
   const missingMetric = feedback.suggestions.some((item) => item.includes("量化"));
   const missingContribution = feedback.suggestions.some((item) => item.includes("个人贡献"));
   return answerTooShort || lowScore || missingMetric || missingContribution;
+}
+
+function setInterviewerThinking(text = "面试官提问中...") {
+  $("#sideCurrentQuestion").textContent = text;
+  applyQuestionDensity(text);
+  $("#callStatus").textContent = "面试官提问中";
+}
+
+function applyQuestionDensity(text) {
+  const card = $(".current-question-card");
+  if (!card) return;
+  const length = String(text || "").length;
+  card.classList.toggle("long-question", length > 90);
+  card.classList.toggle("very-long-question", length > 150);
+}
+
+function getQuestionFocusKey(question) {
+  if (!question) return "unknown";
+  return normalizeSignatureText(`${question.evidence || ""}-${question.type || ""}-${question.text || ""}`).slice(0, 90);
 }
 
 function shouldAskFinalQuestion(interview) {
@@ -1426,7 +1781,7 @@ function saveInterviewNote() {
   textarea.value = "";
   renderInterviewNotes();
   activateSidePanel("notes");
-  showToast("面试笔记已记录。");
+  showToast("面试笔记已保存，报告中会展示。");
 }
 
 function renderInterviewNotes() {
@@ -1480,7 +1835,11 @@ async function finishInterview(options = {}) {
     return;
   }
   interview.active = false;
-  $("#roomTitle").textContent = "模拟已结束";
+  $("#roomTitle").textContent = completion ? "面试结束！正在生成面试报告" : "模拟已结束";
+  if (completion) {
+    $("#sideCurrentQuestion").textContent = "面试结束！正在生成面试报告";
+    applyQuestionDensity("面试结束！正在生成面试报告");
+  }
   setMeetingStatus("idle");
   const localReport = buildReport(interview);
   const aiResult = await callAiTask("report", { materials: getMaterials(), interview, localReport }, "面试报告已使用本地规则兜底。");
@@ -1502,9 +1861,9 @@ function normalizeReport(aiReport, localReport) {
   return {
     ...localReport,
     score: Number.isFinite(Number(aiReport.score)) ? Math.max(20, Math.min(98, Number(aiReport.score))) : localReport.score,
-    strengths: arrayOrFallback(aiReport.strengths, localReport.strengths).slice(0, 6),
-    risks: arrayOrFallback(aiReport.risks, localReport.risks).slice(0, 6),
-    suggestions: arrayOrFallback(aiReport.suggestions, localReport.suggestions).slice(0, 8),
+    strengths: arrayOrFallback(aiReport.strengths, localReport.strengths).slice(0, 3),
+    risks: arrayOrFallback(aiReport.risks, localReport.risks).slice(0, 3),
+    suggestions: arrayOrFallback(aiReport.suggestions, localReport.suggestions).slice(0, 3),
     actionPlan: aiReport.actionPlan && typeof aiReport.actionPlan === "object" ? { ...localReport.actionPlan, ...aiReport.actionPlan } : localReport.actionPlan,
   };
 }
@@ -1544,6 +1903,7 @@ function buildReport(interview) {
     suggestions: topSuggestions,
     actionPlan: buildActionPlan(role, topSuggestions),
     turns: interview.turns,
+    notes: state.interviewNotes.slice(),
   };
 }
 
@@ -1634,12 +1994,33 @@ function renderReport(report) {
         .join("")}
     </div>
     <div class="report-section">
+      <h4>面试笔记</h4>
+      ${renderReportNotes(report.notes)}
+    </div>
+    <div class="report-section">
       <h4>行动计划</h4>
       ${Object.entries(report.actionPlan)
         .map(([period, items]) => `<strong>${period}</strong><ul>${items.map((item) => `<li>${escapeHTML(item)}</li>`).join("")}</ul>`)
         .join("")}
     </div>
   `;
+}
+
+function renderReportNotes(notes = []) {
+  if (!Array.isArray(notes) || !notes.length) {
+    return `<p class="muted">本次面试没有记录额外笔记。</p>`;
+  }
+  return notes
+    .map(
+      (note, index) => `
+        <div class="turn-card note-report-card">
+          <strong>笔记 ${index + 1}：${escapeHTML(formatDate(note.createdAt))}</strong>
+          <p>${escapeHTML(note.text)}</p>
+          <small>${escapeHTML(note.question || "面试记录")}</small>
+        </div>
+      `,
+    )
+    .join("");
 }
 
 async function exportReportFile(type) {
@@ -1763,6 +2144,256 @@ function clearHistory() {
   localStorage.removeItem(storageKey);
   renderHistory();
   showToast("历史记录已清空。");
+}
+
+function readProfile() {
+  const fallback = { uploads: [], plans: [], notes: [], target: {} };
+  try {
+    const value = JSON.parse(localStorage.getItem(profileStorageKey) || "{}");
+    return {
+      ...fallback,
+      ...value,
+      uploads: Array.isArray(value.uploads) ? value.uploads : [],
+      plans: Array.isArray(value.plans) ? value.plans : [],
+      notes: Array.isArray(value.notes) ? value.notes : [],
+      target: value.target && typeof value.target === "object" ? value.target : {},
+    };
+  } catch {
+    localStorage.removeItem(profileStorageKey);
+    return fallback;
+  }
+}
+
+function readQuestionMemory() {
+  const fallback = { wrongbook: [], done: [] };
+  try {
+    const value = JSON.parse(localStorage.getItem(wrongbookStorageKey) || "{}");
+    return {
+      wrongbook: Array.isArray(value.wrongbook) ? value.wrongbook : [],
+      done: Array.isArray(value.done) ? value.done : [],
+    };
+  } catch {
+    localStorage.removeItem(wrongbookStorageKey);
+    return fallback;
+  }
+}
+
+function saveProfileStore() {
+  localStorage.setItem(profileStorageKey, JSON.stringify(state.profile));
+  renderProfile();
+}
+
+function saveQuestionMemory() {
+  localStorage.setItem(wrongbookStorageKey, JSON.stringify(state.savedQuestionNotes));
+  renderProfile();
+}
+
+function updateProfileTargetFromMaterials(materials) {
+  state.profile.target = {
+    role: materials.role?.label || "",
+    jobTitle: materials.jobTitle || "",
+    companyName: materials.companyName || "",
+    timeline: materials.timeline || "",
+    stage: materials.stage || "",
+    updatedAt: new Date().toISOString(),
+  };
+  saveProfileStore();
+}
+
+function recordUploadedMaterial(sourceName, textareaSelector, text, replaced) {
+  const type = textareaSelector === "#jdText" ? "目标 JD" : "简历";
+  state.profile.uploads.unshift({
+    id: `upload-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name: sourceName || "上传材料",
+    type,
+    replaced,
+    summary: truncateText(text, 120),
+    createdAt: new Date().toISOString(),
+  });
+  state.profile.uploads = state.profile.uploads.slice(0, 12);
+  saveProfileStore();
+}
+
+function saveProfilePlan() {
+  const input = $("#profilePlanInput");
+  const text = input.value.trim();
+  if (!text) {
+    showToast("请先写一条准备计划。");
+    return;
+  }
+  state.profile.plans.unshift({
+    id: `plan-${Date.now()}`,
+    text,
+    createdAt: new Date().toISOString(),
+  });
+  state.profile.plans = state.profile.plans.slice(0, 20);
+  input.value = "";
+  saveProfileStore();
+  showToast("准备计划已保存。");
+}
+
+function saveProfileNote() {
+  const input = $("#profileNoteInput");
+  const text = input.value.trim();
+  if (!text) {
+    showToast("请先写一条个人笔记。");
+    return;
+  }
+  state.profile.notes.unshift({
+    id: `profile-note-${Date.now()}`,
+    type: "个人笔记",
+    text,
+    createdAt: new Date().toISOString(),
+  });
+  state.profile.notes = state.profile.notes.slice(0, 40);
+  input.value = "";
+  saveProfileStore();
+  showToast("个人笔记已保存。");
+}
+
+function saveCurrentQuestionNote() {
+  const question = state.selectedQuestion;
+  if (!question) {
+    showToast("请先选择一道题。");
+    return;
+  }
+  const answer = $("#practiceAnswer").value.trim();
+  const feedback = getLastFeedbackForQuestion(question);
+  state.profile.notes.unshift({
+    id: `question-note-${Date.now()}`,
+    type: "题目笔记",
+    text: question.text,
+    question,
+    answer,
+    feedback,
+    createdAt: new Date().toISOString(),
+  });
+  state.profile.notes = state.profile.notes.slice(0, 40);
+  saveProfileStore();
+  showToast("已记到个人笔记。");
+}
+
+function saveCurrentQuestionWrongbook() {
+  const question = state.selectedQuestion;
+  if (!question) {
+    showToast("请先选择一道题。");
+    return;
+  }
+  const answer = $("#practiceAnswer").value.trim();
+  const feedback = getLastFeedbackForQuestion(question);
+  upsertQuestionMemory("wrongbook", {
+    id: getQuestionFingerprint(question),
+    question,
+    answer,
+    feedback,
+    createdAt: new Date().toISOString(),
+  });
+  showToast("已加入错题本。");
+}
+
+function saveDoneQuestionRecord(record) {
+  upsertQuestionMemory("done", {
+    id: `${getQuestionFingerprint(record.question)}-${Date.now()}`,
+    question: record.question,
+    answer: record.answer,
+    feedback: record.feedback,
+    createdAt: record.createdAt,
+  });
+}
+
+function upsertQuestionMemory(kind, item) {
+  const list = state.savedQuestionNotes[kind] || [];
+  const deduped = list.filter((entry) => entry.id !== item.id);
+  state.savedQuestionNotes[kind] = [item, ...deduped].slice(0, 60);
+  saveQuestionMemory();
+}
+
+function getLastFeedbackForQuestion(question) {
+  if (state.lastPracticeFeedback?.question?.id === question.id) return state.lastPracticeFeedback.feedback;
+  const record = [...state.practiceRecords].reverse().find((item) => item.question?.id === question.id);
+  return record?.feedback || null;
+}
+
+function getQuestionFingerprint(question) {
+  return `qmem-${btoa(unescape(encodeURIComponent(String(question?.text || question?.id || Date.now()).slice(0, 120))))
+    .replaceAll("=", "")
+    .slice(0, 36)}`;
+}
+
+function renderProfile() {
+  if (!$("#profileTargetSummary")) return;
+  const target = state.profile.target || {};
+  $("#profileTargetSummary").innerHTML = target.jobTitle || target.role
+    ? `
+      <strong>${escapeHTML(target.jobTitle || target.role)}</strong>
+      <span>${escapeHTML(target.companyName || "未填写公司")} · ${escapeHTML(target.stage || "未填写阶段")} · ${escapeHTML(target.timeline || "未填写时间")}</span>
+      <small>更新于 ${escapeHTML(target.updatedAt ? formatDate(target.updatedAt) : "刚刚")}</small>
+    `
+    : "还没有目标信息。";
+  $("#profileUploadList").innerHTML = renderSimpleProfileList(state.profile.uploads, "还没有上传记录。", (item) => `
+    <strong>${escapeHTML(item.type)} · ${escapeHTML(item.name)}</strong>
+    <span>${escapeHTML(item.summary)}</span>
+    <small>${escapeHTML(formatDate(item.createdAt))} · ${item.replaced ? "已替换默认内容" : "已追加到现有内容"}</small>
+  `);
+  $("#profilePlanList").innerHTML = renderSimpleProfileList(state.profile.plans, "还没有保存计划。", (item) => `
+    <span>${escapeHTML(item.text)}</span>
+    <small>${escapeHTML(formatDate(item.createdAt))}</small>
+  `);
+  $("#profileNoteList").innerHTML = renderSimpleProfileList(state.profile.notes, "还没有个人笔记。", (item) => `
+    <strong>${escapeHTML(item.type || "笔记")}</strong>
+    <span>${escapeHTML(item.text || item.question?.text || "")}</span>
+    <small>${escapeHTML(formatDate(item.createdAt))}</small>
+  `);
+  $("#wrongbookList").innerHTML = renderQuestionMemoryList(state.savedQuestionNotes.wrongbook, "错题本还是空的。");
+  $("#doneQuestionList").innerHTML = renderQuestionMemoryList(state.savedQuestionNotes.done, "还没有做过的题。");
+  bindProfilePracticeButtons();
+}
+
+function renderSimpleProfileList(items, emptyText, renderItem) {
+  if (!Array.isArray(items) || !items.length) return `<p class="muted">${emptyText}</p>`;
+  return items.map((item) => `<div class="profile-list-item">${renderItem(item)}</div>`).join("");
+}
+
+function renderQuestionMemoryList(items, emptyText) {
+  if (!Array.isArray(items) || !items.length) return `<p class="muted">${emptyText}</p>`;
+  return items
+    .map(
+      (item) => `
+        <div class="profile-list-item question-memory-item">
+          <strong>${escapeHTML(item.question?.text || "题目")}</strong>
+          <span>${escapeHTML(item.answer ? `上次回答：${truncateText(item.answer, 96)}` : "还没有保存回答。")}</span>
+          <small>${escapeHTML(item.question?.type || "题库")} · ${escapeHTML(formatDate(item.createdAt))}</small>
+          <button class="button secondary" type="button" data-practice-memory="${escapeHTML(item.id)}">再练一次</button>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function bindProfilePracticeButtons() {
+  $$("[data-practice-memory]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.practiceMemory;
+      const item = [...state.savedQuestionNotes.wrongbook, ...state.savedQuestionNotes.done].find((entry) => entry.id === id);
+      if (!item?.question) return;
+      state.selectedQuestion = item.question;
+      if (!state.questionBank.some((question) => question.id === item.question.id)) {
+        state.questionBank.unshift(item.question);
+      }
+      state.selectedLevel = item.question.level || "基础";
+      state.selectedType = "全部";
+      populateTypeFilter();
+      renderQuestions();
+      renderSelectedQuestion();
+      showView("questions");
+      showToast("已打开这道题，可以重新作答。");
+    });
+  });
+}
+
+function truncateText(text, maxLength = 100) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  return clean.length > maxLength ? `${clean.slice(0, maxLength)}...` : clean;
 }
 
 async function toggleVoiceInput(textareaSelector, buttonSelector) {

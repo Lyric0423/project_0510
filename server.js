@@ -549,6 +549,9 @@ async function buildDocxReport(report) {
     headingParagraph("逐题复盘"),
     ...report.turns.flatMap((turn, index) => turnDocxParagraphs(turn, index)),
     spacerParagraph(),
+    headingParagraph("面试笔记"),
+    ...noteDocxParagraphs(report.notes),
+    spacerParagraph(),
     headingParagraph("行动计划"),
     ...Object.entries(report.actionPlan).flatMap(([period, items]) => [
       new Paragraph({ children: [new TextRun({ text: period, bold: true })] }),
@@ -603,6 +606,18 @@ function turnDocxParagraphs(turn, index) {
     textParagraph(`亮点：${strengths.join("；")}`),
     textParagraph(`建议：${suggestions.join("；")}`),
   ];
+}
+
+function noteDocxParagraphs(notes) {
+  if (!Array.isArray(notes) || !notes.length) return [textParagraph("本次面试没有记录额外笔记。")];
+  return notes.flatMap((note, index) => [
+    new Paragraph({
+      spacing: { before: 120, after: 80 },
+      children: [new TextRun({ text: `笔记 ${index + 1}：${cleanExportText(note.createdAt || "")}`, bold: true, size: 23 })],
+    }),
+    textParagraph(note.text || "未记录内容"),
+    textParagraph(`关联问题：${note.question || "面试记录"}`),
+  ]);
 }
 
 function buildPdfReport(report) {
@@ -660,6 +675,19 @@ function buildPdfReport(report) {
       doc.text(`建议：${cleanExportText(arrayOrFallback(turn.feedback?.suggestions, ["继续补充细节。"])[0])}`, { lineGap: 6 });
       doc.moveDown(0.6);
     });
+
+    pdfSection(doc, "面试笔记");
+    if (report.notes.length) {
+      report.notes.forEach((note, index) => {
+        ensurePdfSpace(doc, 90);
+        doc.fontSize(12).fillColor("#111827").text(`笔记 ${index + 1}：${cleanExportText(note.createdAt || "")}`, { lineGap: 3 });
+        doc.fontSize(10.5).fillColor("#374151").text(cleanExportText(note.text || "未记录内容"), { lineGap: 3 });
+        doc.fontSize(9.5).fillColor("#64748b").text(`关联问题：${cleanExportText(note.question || "面试记录")}`, { lineGap: 6 });
+        doc.moveDown(0.5);
+      });
+    } else {
+      pdfList(doc, ["本次面试没有记录额外笔记。"]);
+    }
 
     pdfSection(doc, "行动计划");
     Object.entries(report.actionPlan).forEach(([period, items]) => {
@@ -767,6 +795,7 @@ function normalizeExportReport(report) {
     suggestions: normalizeTextList(report.suggestions),
     actionPlan: normalizeActionPlan(report.actionPlan),
     turns: turns.map(normalizeExportTurn),
+    notes: normalizeExportNotes(report.notes),
   };
 }
 
@@ -803,6 +832,18 @@ function normalizeActionPlan(actionPlan) {
       .slice(0, 8)
       .map(([period, items]) => [cleanExportText(period), normalizeTextList(items)]),
   );
+}
+
+function normalizeExportNotes(notes) {
+  if (!Array.isArray(notes)) return [];
+  return notes
+    .map((note) => ({
+      text: cleanExportText(note?.text || note),
+      question: cleanExportText(note?.question || ""),
+      createdAt: cleanExportText(note?.createdAt || ""),
+    }))
+    .filter((note) => note.text)
+    .slice(0, 50);
 }
 
 function normalizeTextList(value) {

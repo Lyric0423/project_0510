@@ -8,7 +8,7 @@
       name="description"
       content="面向本科生的大厂实习 AI 模拟面试官，支持简历解析、JD 分析、个性化题库、模拟面试与复盘报告。"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260510-nls-workbench" />
+    <link rel="stylesheet" href="./styles.css?v=20260510-profile-flow" />
   </head>
   <body>
     <header class="topbar">
@@ -26,16 +26,17 @@
         <button type="button" data-view-target="questions">题库</button>
         <button type="button" data-view-target="interview">模拟</button>
         <button type="button" data-view-target="report">报告</button>
+        <button type="button" data-view-target="profile">我的</button>
       </nav>
     </header>
 
     <main id="top">
       <section class="hero-section view-section page-shell active" id="home" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <p class="eyebrow">本科生大厂实习面试训练</p>
+          <p class="eyebrow">本科生实习面试训练</p>
           <h1 id="hero-title">根据你的简历和岗位，生成一场更像真实面试的 AI 对练。</h1>
           <p class="hero-subtitle">
-            先聚焦后端、前端、数据分析、算法和产品实习。现在已支持岗位通用 JD、浏览器 OCR/PDF 提取、语音转写入口和后端大模型 API 代理。
+            还在担心简历项目讲不清、岗位问题答不到点上？把你的简历和目标 JD 放进来，面试舱 AI 会帮你生成岗位诊断、定制题库和真实模拟追问，让你在投递前先把最容易扣分的地方练透。
           </p>
           <div class="hero-actions">
             <button class="button primary" type="button" data-view-target="setup">点击开始使用</button>
@@ -82,10 +83,17 @@
       </section>
 
       <section id="setup" class="section setup-section view-section page-shell" aria-labelledby="setup-title" hidden>
-        <div class="section-heading">
-          <p class="eyebrow">Step 1</p>
-          <h2 id="setup-title">建立你的面试上下文</h2>
-          <p>选择目标岗位，补充简历和 JD。信息越具体，题库和追问越贴近真实面试。</p>
+        <div class="section-heading setup-heading">
+          <div>
+            <p class="eyebrow">Step 1</p>
+            <h2 id="setup-title">建立你的面试上下文</h2>
+            <p>选择目标岗位，补充简历和 JD。信息越具体，题库和追问越贴近真实面试。</p>
+          </div>
+          <div class="setup-actions">
+            <button class="button primary" id="generateBtn" type="button">下一步</button>
+            <button class="button secondary" id="fillDemoBtn" type="button">先看示例简历分析</button>
+            <p id="setupHint">进入诊断与个性化题库</p>
+          </div>
         </div>
 
         <div class="workspace-grid">
@@ -131,7 +139,7 @@
               <span>粘贴简历文本或项目经历</span>
               <textarea
                 id="resumeText"
-                rows="9"
+                rows="6"
                 placeholder="示例：计算机专业，大三。项目：电商推荐系统，使用 Java、Spring Boot、MySQL、Redis，负责商品接口、缓存设计和推荐结果排序..."
               ></textarea>
             </label>
@@ -159,7 +167,7 @@
               <span>粘贴 JD 文本</span>
               <textarea
                 id="jdText"
-                rows="7"
+                rows="5"
                 placeholder="示例：熟悉 Java 基础、Spring Boot、MySQL、Redis，有良好的数据结构与算法基础，具备项目开发经验..."
               ></textarea>
             </label>
@@ -167,18 +175,43 @@
           </article>
         </div>
 
-        <div class="action-strip">
-          <button class="button primary" id="generateBtn" type="button">生成匹配诊断与题库</button>
-          <button class="button secondary" id="fillDemoBtn" type="button">载入演示数据</button>
-          <p id="setupHint">公网版本会优先调用后端大模型 API；未配置 API Key 时自动使用本地规则兜底。</p>
-        </div>
       </section>
 
       <section class="section view-section page-shell" id="diagnosis" aria-labelledby="diagnosis-title" hidden>
-        <div class="section-heading compact">
-          <p class="eyebrow">Step 2</p>
-          <h2 id="diagnosis-title">岗位匹配诊断</h2>
-          <p>系统会根据简历与 JD 抽取关键词，给出优势、风险和准备优先级。</p>
+        <div class="section-heading compact diagnosis-heading">
+          <div>
+            <p class="eyebrow">Step 2</p>
+            <h2 id="diagnosis-title">岗位匹配诊断</h2>
+            <p>系统会根据简历与 JD 抽取关键词，给出优势、风险和准备优先级。</p>
+            <p class="inline-note" id="diagnosisEmptyHint">请先上传简历，获得个性化分析。</p>
+          </div>
+          <button class="button primary" id="diagnosisGenerateBtn" type="button">生成诊断</button>
+        </div>
+        <div class="generation-progress" id="generationProgress" hidden>
+          <div class="generation-copy">
+            <strong id="generationProgressText">正在生成中</strong>
+            <p id="generationInsight">如果你是面试官，你想要招什么样的人？</p>
+          </div>
+          <div class="generation-meter" aria-hidden="true">
+            <span id="generationProgressBar"></span>
+          </div>
+          <span id="generationProgressPercent">0%</span>
+        </div>
+        <div class="generation-preview" id="generationPreview" hidden>
+          <article class="panel generation-preview-card">
+            <div class="panel-heading">
+              <h3 id="generationPreviewTitle">先看一组岗位高频题</h3>
+              <span class="status-pill">静态预览</span>
+            </div>
+            <ul class="clean-list" id="generationPreviewTips"></ul>
+          </article>
+          <article class="panel generation-preview-card">
+            <div class="panel-heading">
+              <h3>解析时先练这些</h3>
+              <span class="status-pill">稍后会替换为个性化题库</span>
+            </div>
+            <div class="preview-question-list" id="generationPreviewQuestions"></div>
+          </article>
         </div>
         <div class="diagnosis-grid">
           <article class="score-card">
@@ -203,10 +236,14 @@
       </section>
 
       <section class="section view-section page-shell" id="questions" aria-labelledby="questions-title" hidden>
-        <div class="section-heading compact">
-          <p class="eyebrow">Step 3</p>
-          <h2 id="questions-title">个性化面试题库</h2>
-          <p>题库分为基础、进阶、挑战三层。提示只给框架和要点，不给完整背诵答案。</p>
+        <div class="section-heading compact questions-heading">
+          <div>
+            <p class="eyebrow">Step 3</p>
+            <h2 id="questions-title">个性化面试题库</h2>
+            <p>题库分为基础、进阶、挑战三层。提示只给框架和要点，不给完整背诵答案。</p>
+            <p class="inline-note" id="questionsEmptyHint">此为示例题库，上传您的简历来获得个性化题库。</p>
+          </div>
+          <button class="button primary" id="questionsGenerateBtn" type="button">生成个性化题库</button>
         </div>
 
         <div class="toolbar">
@@ -232,12 +269,17 @@
             <div class="practice-actions">
               <button class="button secondary" id="hintBtn" type="button">要点提示</button>
               <button class="button secondary" id="recordBtn" type="button">语音作答</button>
+              <button class="button ghost" id="saveQuestionNoteBtn" type="button">记到笔记</button>
+              <button class="button ghost" id="saveWrongQuestionBtn" type="button">加入错题本</button>
             </div>
             <label class="field">
               <span>你的回答</span>
               <textarea id="practiceAnswer" rows="7" placeholder="请用自己的真实经历作答。建议包含背景、行动、结果和反思。"></textarea>
             </label>
-            <button class="button primary" id="feedbackBtn" type="button">生成单题反馈</button>
+            <div class="practice-submit-row">
+              <button class="button primary" id="feedbackBtn" type="button">生成单题反馈</button>
+              <button class="button secondary" id="startInterviewFromQuestionBtn" type="button">开始模拟面试</button>
+            </div>
             <div class="feedback-box" id="practiceFeedback" hidden></div>
           </article>
         </div>
@@ -276,6 +318,7 @@
               </div>
             </div>
             <p class="inline-note interview-type-hint" id="interviewTypeHint">系统会根据岗位方向自动推荐面试类型，你也可以手动切换。</p>
+            <p class="inline-note interview-device-tip">你可以打开麦克风或摄像头，增强真实感；不开也可以直接文字作答。</p>
             <div class="meeting-stage" id="meetingStage">
               <header class="meeting-topbar">
                 <div>
@@ -340,12 +383,6 @@
                       <textarea id="interviewNotes" rows="4" placeholder="记录面试官追问、你的卡点、待补证据..."></textarea>
                       <button class="button primary" id="saveInterviewNoteBtn" type="button">记录</button>
                     </label>
-                    <div class="side-card saved-notes-card">
-                      <h4>已记录</h4>
-                      <div class="saved-notes-list" id="savedNotesList">
-                        <p class="muted">还没有记录。</p>
-                      </div>
-                    </div>
                   </div>
                   <div class="side-panel-body" id="settingsPanel" hidden>
                     <div class="side-card settings-card">
@@ -411,6 +448,60 @@
         </div>
       </section>
 
+      <section class="section view-section page-shell" id="profile" aria-labelledby="profile-title" hidden>
+        <div class="section-heading compact">
+          <p class="eyebrow">Profile</p>
+          <h2 id="profile-title">我的面试资料</h2>
+          <p>本页只保存在当前浏览器，用来沉淀目标、上传材料、练习记录、个人笔记和错题本。</p>
+        </div>
+
+        <div class="profile-grid">
+          <article class="panel profile-card">
+            <div class="panel-heading">
+              <h3>目标与材料</h3>
+              <span class="status-pill">本地保存</span>
+            </div>
+            <div class="profile-target" id="profileTargetSummary">还没有目标信息。</div>
+            <h4>历史上传材料</h4>
+            <div class="profile-list" id="profileUploadList"></div>
+          </article>
+
+          <article class="panel profile-card">
+            <div class="panel-heading">
+              <h3>准备计划</h3>
+              <button class="text-button" id="savePlanBtn" type="button">保存</button>
+            </div>
+            <textarea id="profilePlanInput" rows="5" placeholder="例如：本周重写项目经历；每天练 3 道项目追问；周末做一次 HR 面。"></textarea>
+            <div class="profile-list" id="profilePlanList"></div>
+          </article>
+
+          <article class="panel profile-card">
+            <div class="panel-heading">
+              <h3>个人笔记</h3>
+              <button class="text-button" id="saveProfileNoteBtn" type="button">保存</button>
+            </div>
+            <textarea id="profileNoteInput" rows="5" placeholder="记录你对岗位、项目表达、反问清单的思考。"></textarea>
+            <div class="profile-list" id="profileNoteList"></div>
+          </article>
+
+          <article class="panel profile-card wide">
+            <div class="panel-heading">
+              <h3>错题本</h3>
+              <span class="status-pill">可再次练习</span>
+            </div>
+            <div class="profile-list question-memory-list" id="wrongbookList"></div>
+          </article>
+
+          <article class="panel profile-card wide">
+            <div class="panel-heading">
+              <h3>做过的题</h3>
+              <span class="status-pill">保留回答与反馈</span>
+            </div>
+            <div class="profile-list question-memory-list" id="doneQuestionList"></div>
+          </article>
+        </div>
+      </section>
+
       <section class="section view-section page-shell" id="report" aria-labelledby="report-title" hidden>
         <div class="section-heading compact">
           <p class="eyebrow">Step 5</p>
@@ -440,6 +531,6 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script src="./app.js?v=20260510-nls-workbench"></script>
+    <script src="./app.js?v=20260510-profile-flow"></script>
   </body>
 </html>
