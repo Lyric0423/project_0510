@@ -54,6 +54,7 @@ const defaultJdTemplates = {
 
 const state = {
   selectedRole: "backend",
+  activeView: "home",
   selectedLevel: "基础",
   selectedType: "全部",
   jdAutoFilled: true,
@@ -63,29 +64,50 @@ const state = {
   practiceRecords: [],
   interview: null,
   history: [],
+  voiceConfig: null,
 };
 
 const storageKey = "mianshicang_mvp_history";
+const draftStorageKey = "mianshicang_mvp_draft_v3";
+const validViews = new Set(["home", "setup", "diagnosis", "questions", "interview", "report"]);
+const pdfJsUrl = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const pdfWorkerUrl = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const tesseractUrl = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
 let activeRecorder = null;
 let activeRecognition = null;
 let activeRecognitionSession = null;
 let toastTimer = null;
+let audioContext = null;
+let pdfJsReady = null;
+let tesseractReady = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 document.addEventListener("DOMContentLoaded", () => {
   configurePdfWorker();
-  state.history = readHistory();
-  renderRoleGrid();
-  applyDefaultJdTemplate({ force: true });
   bindEvents();
+  state.history = readHistory();
+  restoreDraft();
+  renderRoleGrid();
+  applyDefaultJdTemplate({ force: !$("#jdText").value.trim() });
+  updateInterviewTypeForRole();
   renderHistory();
   renderEmptyDiagnosis();
   renderQuestions();
+  showView(getInitialView(), { replaceHash: true, scroll: false });
 });
 
 function bindEvents() {
+  $$("[data-view-target]").forEach((button) => {
+    button.addEventListener("click", () => showView(button.dataset.viewTarget));
+  });
+  window.addEventListener("hashchange", () => {
+    showView(getViewFromHash() || "home", { updateHash: false });
+  });
+  window.addEventListener("popstate", () => {
+    showView(getViewFromHash() || "home", { updateHash: false });
+  });
   $("#generateBtn").addEventListener("click", generateWorkspace);
   $("#fillDemoBtn").addEventListener("click", fillDemo);
   $("#resumeFile").addEventListener("change", (event) => handleFile(event, "#resumeText", "#resumeFileName"));
@@ -93,9 +115,14 @@ function bindEvents() {
   $("#jdText").addEventListener("input", () => {
     state.jdAutoFilled = false;
     updateDefaultJdHint("已使用你填写或识别的 JD 内容。切换岗位不会覆盖这段文本。");
+    persistDraft();
   });
-  $("#timelineSelect").addEventListener("change", persistLightState);
-  $("#stageSelect").addEventListener("change", persistLightState);
+  ["#resumeText", "#jobTitle", "#companyName"].forEach((selector) => $(selector).addEventListener("input", persistDraft));
+  $("#timelineSelect").addEventListener("change", persistDraft);
+  $("#stageSelect").addEventListener("change", () => {
+    updateInterviewTypeForRole();
+    persistDraft();
+  });
 
   $$(".segmented button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -117,6 +144,8 @@ function bindEvents() {
 
   $("#startInterviewBtn").addEventListener("click", startInterview);
   $("#finishInterviewBtn").addEventListener("click", finishInterview);
+  $("#interviewType").addEventListener("change", persistDraft);
+  $("#interviewLength").addEventListener("change", persistDraft);
   $("#submitInterviewAnswerBtn").addEventListener("click", submitInterviewAnswer);
   $("#interviewHintBtn").addEventListener("click", showInterviewHint);
   $("#interviewRecordBtn").addEventListener("click", () => toggleVoiceInput("#interviewAnswer", "#interviewRecordBtn"));
@@ -140,10 +169,51 @@ function renderRoleGrid() {
     button.addEventListener("click", () => {
       state.selectedRole = button.dataset.role;
       applyDefaultJdTemplate({ force: state.jdAutoFilled || !$("#jdText").value.trim() });
+      updateInterviewTypeForRole();
       renderRoleGrid();
-      persistLightState();
+      persistDraft();
     });
   });
+}
+
+function getInitialView() {
+  return getViewFromHash() || state.activeView || "home";
+}
+
+function getViewFromHash() {
+  const match = window.location.hash.match(/^#\/([a-z-]+)$/);
+  const view = match?.[1];
+  return validViews.has(view) ? view : "";
+}
+
+function showView(viewId, options = {}) {
+  const { updateHash = true, replaceHash = false, scroll = true } = options;
+  const view = $(`#${viewId}`) ? viewId : "home";
+  state.activeView = view;
+  $$(".view-section").forEach((section) => {
+    const isActive = section.id === view;
+    section.classList.toggle("active", isActive);
+    section.hidden = !isActive;
+  });
+  $$("[data-view-target]").forEach((button) => {
+    const isActive = button.dataset.viewTarget === view;
+    button.classList.toggle("active", isActive);
+    if (isActive) {
+      button.setAttribute("aria-current", "page");
+    } else {
+      button.removeAttribute("aria-current");
+    }
+  });
+  const nextHash = `#/${view}`;
+  if (updateHash && window.location.hash !== nextHash) {
+    if (replaceHash) {
+      window.history.replaceState(null, "", nextHash);
+    } else {
+      window.history.pushState(null, "", nextHash);
+    }
+  }
+  if (scroll) window.scrollTo({ top: 0, behavior: "smooth" });
+  persistDraft();
 }
 
 function fillDemo() {
@@ -159,13 +229,118 @@ function fillDemo() {
     "岗位：后端开发实习生。要求熟悉 Java 基础、Spring Boot、MySQL、Redis，有良好的数据结构与算法基础，了解 HTTP、TCP/IP、操作系统基础。有项目开发经验，能说明技术选型、接口设计、数据库设计和性能优化。加分项：了解缓存一致性、消息队列、分布式系统基础。";
   state.jdAutoFilled = false;
   updateDefaultJdHint("已载入演示数据。这个按钮用于快速体验完整流程，不代表真实后端服务。");
+  updateInterviewTypeForRole();
+  persistDraft();
   generateWorkspace();
+}
+
+function persistDraft() {
+  const draft = {
+    selectedRole: state.selectedRole,
+    activeView: state.activeView,
+    jdAutoFilled: state.jdAutoFilled,
+    timeline: $("#timelineSelect")?.value || "",
+    stage: $("#stageSelect")?.value || "",
+    resumeText: $("#resumeText")?.value || "",
+    jdText: $("#jdText")?.value || "",
+    jobTitle: $("#jobTitle")?.value || "",
+    companyName: $("#companyName")?.value || "",
+    interviewType: $("#interviewType")?.value || "",
+    interviewLength: $("#interviewLength")?.value || "",
+  };
+  localStorage.setItem(draftStorageKey, JSON.stringify(draft));
+}
+
+function restoreDraft() {
+  try {
+    const draft = JSON.parse(localStorage.getItem(draftStorageKey) || "{}");
+    if (!draft || typeof draft !== "object") return;
+    state.selectedRole = draft.selectedRole || state.selectedRole;
+    state.activeView = draft.activeView || state.activeView;
+    state.jdAutoFilled = typeof draft.jdAutoFilled === "boolean" ? draft.jdAutoFilled : state.jdAutoFilled;
+    if (draft.timeline) $("#timelineSelect").value = draft.timeline;
+    if (draft.stage) $("#stageSelect").value = draft.stage;
+    if (draft.resumeText) $("#resumeText").value = draft.resumeText;
+    if (draft.jdText) $("#jdText").value = draft.jdText;
+    if (draft.jobTitle) $("#jobTitle").value = draft.jobTitle;
+    if (draft.companyName) $("#companyName").value = draft.companyName;
+    if (draft.interviewType) $("#interviewType").value = draft.interviewType;
+    if (draft.interviewLength) $("#interviewLength").value = draft.interviewLength;
+  } catch {
+    localStorage.removeItem(draftStorageKey);
+  }
+}
+
+function updateInterviewTypeForRole() {
+  const role = roles.find((item) => item.id === state.selectedRole) || roles[0];
+  const stage = $("#stageSelect")?.value || "";
+  let type = "技术/业务面";
+  let interviewer = "陈面试官";
+  let title = "技术面试官";
+  let focus = "项目深挖 / 技术基础 / 追问承压";
+
+  if (stage === "HR面前") {
+    type = "HR面";
+    title = "HR 面试官";
+    focus = "求职动机 / 稳定性 / 行为面";
+  } else if (role.id === "product" || role.id === "data") {
+    type = "产品/数据面";
+    title = role.id === "product" ? "产品业务面试官" : "数据分析面试官";
+    focus = role.id === "product" ? "产品判断 / 指标意识 / 项目推动" : "SQL / 指标拆解 / 业务分析";
+  } else if (role.id === "uncertain") {
+    type = "HR面";
+    title = "实习面试官";
+    focus = "方向澄清 / 经历可信度 / 岗位动机";
+  }
+
+  $("#interviewType").value = type;
+  $("#interviewerName").textContent = interviewer;
+  $("#interviewerTitle").textContent = `${title} · ${role.label}`;
+  $("#meetingFocus").textContent = focus;
+  $("#interviewTypeHint").textContent = `已根据「${role.label} / ${stage || "默认阶段"}」推荐：${type}。你可以手动切换。`;
 }
 
 function configurePdfWorker() {
   if (window.pdfjsLib) {
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
   }
+}
+
+function loadExternalScript(src, globalName) {
+  if (window[globalName]) return Promise.resolve(window[globalName]);
+  const existingScript = document.querySelector(`script[data-global="${globalName}"]`);
+  if (existingScript) {
+    return new Promise((resolve, reject) => {
+      existingScript.addEventListener("load", () => resolve(window[globalName]), { once: true });
+      existingScript.addEventListener("error", reject, { once: true });
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.global = globalName;
+    script.onload = () => resolve(window[globalName]);
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function ensurePdfJs() {
+  if (window.pdfjsLib) {
+    configurePdfWorker();
+    return window.pdfjsLib;
+  }
+  pdfJsReady = pdfJsReady || loadExternalScript(pdfJsUrl, "pdfjsLib");
+  const pdfjsLib = await pdfJsReady;
+  configurePdfWorker();
+  return pdfjsLib;
+}
+
+async function ensureTesseract() {
+  if (window.Tesseract) return window.Tesseract;
+  tesseractReady = tesseractReady || loadExternalScript(tesseractUrl, "Tesseract");
+  return tesseractReady;
 }
 
 function applyDefaultJdTemplate({ force = false } = {}) {
@@ -202,7 +377,7 @@ async function handleFile(event, textareaSelector, labelSelector) {
 
   if (isPdf) {
     try {
-      showToast("正在提取 PDF 文本。扫描版 PDF 可能需要转图片 OCR。");
+      showToast("正在提取 PDF 文本。若文字提取失败会自动尝试页面 OCR。");
       const text = await extractPdfText(file);
       if (text.trim()) {
         appendExtractedText(textareaSelector, text);
@@ -252,21 +427,59 @@ function readFileAsArrayBuffer(file) {
 }
 
 async function extractPdfText(file) {
-  if (!window.pdfjsLib) throw new Error("pdf.js is not loaded");
+  const pdfjsLib = await ensurePdfJs();
   const buffer = await readFileAsArrayBuffer(file);
-  const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const pages = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const content = await page.getTextContent();
     pages.push(content.items.map((item) => item.str).join(" "));
   }
+  const text = pages.join("\n\n");
+  if (isReadableExtractedText(text)) return text;
+  showToast("PDF 文字层不可读，正在把页面渲染成图片后 OCR。");
+  return ocrPdfPages(pdf);
+}
+
+function isReadableExtractedText(text) {
+  const cleanText = String(text || "").replace(/\s+/g, "");
+  const chineseCount = (cleanText.match(/[\u4e00-\u9fa5]/g) || []).length;
+  const latinCount = (cleanText.match(/[a-zA-Z0-9]/g) || []).length;
+  return cleanText.length > 80 && chineseCount + latinCount > cleanText.length * 0.35;
+}
+
+async function ocrPdfPages(pdf) {
+  const Tesseract = await ensureTesseract();
+  const pages = [];
+  const maxPages = Math.min(pdf.numPages, 5);
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    showToast(`PDF OCR 识别第 ${pageNumber}/${maxPages} 页`);
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 2 });
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    if (!blob) continue;
+    const result = await Tesseract.recognize(blob, "chi_sim+eng", {
+      logger: (message) => {
+        if (message.status === "recognizing text") {
+          const percent = Math.round((message.progress || 0) * 100);
+          showToast(`PDF 第 ${pageNumber} 页 OCR ${percent}%`);
+        }
+      },
+    });
+    pages.push(result.data.text || "");
+  }
   return pages.join("\n\n");
 }
 
 async function recognizeImageText(file) {
-  if (!window.Tesseract) throw new Error("Tesseract.js is not loaded");
-  const result = await window.Tesseract.recognize(file, "chi_sim+eng", {
+  const Tesseract = await ensureTesseract();
+  const result = await Tesseract.recognize(file, "chi_sim+eng", {
     logger: (message) => {
       if (message.status === "recognizing text") {
         const percent = Math.round((message.progress || 0) * 100);
@@ -314,7 +527,8 @@ async function generateWorkspace() {
   renderSelectedQuestion();
   $("#heroQuestionCount").textContent = state.questionBank.length;
   showToast("已生成岗位匹配诊断和个性化题库。");
-  location.hash = "#diagnosis";
+  persistDraft();
+  showView("diagnosis");
 }
 
 async function callAiTask(task, payload) {
@@ -618,7 +832,7 @@ function renderQuestions() {
       state.selectedQuestion = state.questionBank.find((item) => item.id === button.dataset.questionId);
       renderQuestions();
       renderSelectedQuestion();
-      location.hash = "#practice";
+      showView("questions");
     });
   });
 }
@@ -755,10 +969,11 @@ function renderFeedback(feedback) {
   `;
 }
 
-function startInterview() {
+async function startInterview() {
   if (!state.questionBank.length) {
-    generateWorkspace();
+    await generateWorkspace();
   }
+  if (!state.questionBank.length) return;
   const type = $("#interviewType").value;
   const length = $("#interviewLength").value;
   const maxQuestions = length === "quick" ? 6 : 10;
@@ -777,6 +992,9 @@ function startInterview() {
   $("#chatTimeline").innerHTML = "";
   $("#interviewAnswer").value = "";
   $("#roomTitle").textContent = `${type}进行中`;
+  setMeetingStatus("calling");
+  playRingtone();
+  window.setTimeout(() => setMeetingStatus("live"), 900);
   addInterviewerQuestion(queue.shift() || fallbackQuestion());
   renderInterviewHeader();
   showToast("模拟面试已开始。");
@@ -812,6 +1030,7 @@ function addInterviewerQuestion(question, isFollowUp = false) {
   state.interview.currentQuestion = { ...question, isFollowUp };
   state.interview.questionCount += 1;
   appendMessage("interviewer", isFollowUp ? "追问" : state.interview.type, question.text);
+  speakInterviewerText(question.text);
   renderInterviewHeader();
 }
 
@@ -898,6 +1117,73 @@ function renderInterviewHeader() {
   $("#followUpCount").textContent = `追问 ${interview.followUps} 次`;
 }
 
+function setMeetingStatus(status) {
+  const stage = $("#meetingStage");
+  if (!stage) return;
+  stage.classList.remove("calling", "live");
+  if (status === "calling") {
+    stage.classList.add("calling");
+    $("#callStatus").textContent = "来电中";
+    return;
+  }
+  if (status === "live") {
+    stage.classList.add("live");
+    $("#callStatus").textContent = "面试中";
+    return;
+  }
+  $("#callStatus").textContent = "等待开始";
+}
+
+function playRingtone() {
+  try {
+    audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+    const now = audioContext.currentTime;
+    [0, 0.28, 0.56].forEach((offset) => {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, now + offset);
+      oscillator.frequency.setValueAtTime(660, now + offset + 0.12);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.14, now + offset + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.22);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(now + offset);
+      oscillator.stop(now + offset + 0.24);
+    });
+  } catch {
+    // Audio is enhancement-only; ignore unsupported browser cases.
+  }
+}
+
+async function speakInterviewerText(text) {
+  try {
+    const voiceConfig = await getVoiceConfig();
+    if (!voiceConfig.configured && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "zh-CN";
+      utterance.rate = 0.95;
+      utterance.pitch = 1.02;
+      window.speechSynthesis.speak(utterance);
+    }
+  } catch {
+    // TTS is enhancement-only.
+  }
+}
+
+async function getVoiceConfig() {
+  if (state.voiceConfig) return state.voiceConfig;
+  try {
+    const response = await fetch("/api/voice/config");
+    state.voiceConfig = response.ok ? await response.json() : { configured: false };
+  } catch {
+    state.voiceConfig = { configured: false };
+  }
+  return state.voiceConfig;
+}
+
 function showInterviewHint() {
   const interview = state.interview;
   if (!interview || !interview.currentQuestion) {
@@ -915,13 +1201,14 @@ async function finishInterview() {
   }
   interview.active = false;
   $("#roomTitle").textContent = "模拟已结束";
+  setMeetingStatus("idle");
   const localReport = buildReport(interview);
   const aiResult = await callAiTask("report", { materials: getMaterials(), interview, localReport });
   const report = normalizeReport(aiResult?.report, localReport);
   renderReport(report);
   saveReport(report);
   showToast("报告已生成。");
-  location.hash = "#report";
+  showView("report");
 }
 
 function normalizeReport(aiReport, localReport) {
@@ -1186,7 +1473,7 @@ function startSpeechRecognition(textareaSelector) {
 }
 
 function persistLightState() {
-  // Reserved for future server sync. The static MVP keeps primary data in form fields and report history.
+  persistDraft();
 }
 
 function findKeywordHits(text, keywords) {

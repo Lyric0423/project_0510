@@ -14,7 +14,9 @@
 - 面试报告；
 - 本地历史记录；
 - 浏览器 OCR/PDF 文本提取；
-- 大模型 API 代理。
+- 大模型 API 代理；
+- 分步工作台式页面；
+- 沉浸式模拟面试界面和电话铃声。
 
 ## 本地运行
 
@@ -44,23 +46,28 @@ http://localhost:5173
 
 ## 大模型 API 配置
 
-推荐先用阿里云百炼 OpenAI 兼容接口：
+第三版默认接 DeepSeek OpenAI 兼容接口。为了保护密钥，项目会优先从 `/Users/lyric/key/api-key` 读取 API Key，不需要把 key 写进 GitHub 仓库。
 
 ```bash
-export LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
-export LLM_MODEL="qwen-plus"
-export LLM_API_KEY="你的API_KEY"
+export LLM_BASE_URL="https://api.deepseek.com"
+export LLM_MODEL="deepseek-chat"
 npm start
 ```
 
-不要把真实 API Key 写进前端文件。
+也可以用环境变量覆盖：
+
+```bash
+export LLM_API_KEY="你的DeepSeek API_KEY"
+```
+
+不要把真实 API Key 写进前端文件或提交到 GitHub。
 
 ## 当前边界
 
 当前版本已能作为公网 MVP 访问。真实上线后建议继续补强：
 
 - DOCX 服务端解析；
-- 扫描版多页 PDF OCR；
-- 云端 ASR；
+- 更稳定的服务端 PDF/OCR；
+- 阿里云语音合成/语音识别真实接口；
 - 用户登录与支付；
 - 后端数据库与对象存储。

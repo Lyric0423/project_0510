@@ -40,16 +40,28 @@ node -v
 npm -v
 ```
 
-## 3. 配置大模型 API Key
+## 3. 配置 DeepSeek API Key
 
-推荐先用阿里云百炼 OpenAI 兼容接口。
+第三版默认接入 DeepSeek。不要把 key 放进代码仓库，建议在服务器上放到 `/Users/lyric/key/api-key`，或用你自己的 `SECRET_ROOT`。
+
+```bash
+mkdir -p /Users/lyric/key
+nano /Users/lyric/key/api-key
+```
+
+文件里只写 DeepSeek API Key，或写：
+
+```text
+DEEPSEEK_API_KEY=你的DeepSeek API_KEY
+```
+
+启动：
 
 ```bash
 cd /var/www/mianshicang
 export PORT=5173
-export LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
-export LLM_MODEL="qwen-plus"
-export LLM_API_KEY="你的API_KEY"
+export LLM_BASE_URL="https://api.deepseek.com"
+export LLM_MODEL="deepseek-chat"
 npm start
 ```
 
@@ -74,9 +86,9 @@ After=network.target
 Type=simple
 WorkingDirectory=/var/www/mianshicang
 Environment=PORT=5173
-Environment=LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-Environment=LLM_MODEL=qwen-plus
-Environment=LLM_API_KEY=替换成你的API_KEY
+Environment=LLM_BASE_URL=https://api.deepseek.com
+Environment=LLM_MODEL=deepseek-chat
+Environment=SECRET_ROOT=/Users/lyric/key
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=3

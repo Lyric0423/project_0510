@@ -1,0 +1,11 @@
+.DS_Store
+node_modules/
+.env
+.env.*
+!.env.example
+
+# Local secrets and user-provided request files may contain keys.
+version_three.md
+
+# User test files can include private resume data.
+resume_test/

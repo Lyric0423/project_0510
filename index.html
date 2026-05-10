@@ -8,11 +8,11 @@
       name="description"
       content="面向本科生的大厂实习 AI 模拟面试官，支持简历解析、JD 分析、个性化题库、模拟面试与复盘报告。"
     />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260510-routefix" />
   </head>
   <body>
     <header class="topbar">
-      <a class="brand" href="#top" aria-label="回到首页">
+      <a class="brand" href="#/home" aria-label="回到首页">
         <span class="brand-mark">M</span>
         <span>
           <strong>面试舱 AI</strong>
@@ -20,15 +20,17 @@
         </span>
       </a>
       <nav class="nav-links" aria-label="主导航">
-        <a href="#setup">开始准备</a>
-        <a href="#questions">题库</a>
-        <a href="#interview">模拟</a>
-        <a href="#report">报告</a>
+        <button class="active" type="button" data-view-target="home">首页</button>
+        <button type="button" data-view-target="setup">准备</button>
+        <button type="button" data-view-target="diagnosis">诊断</button>
+        <button type="button" data-view-target="questions">题库</button>
+        <button type="button" data-view-target="interview">模拟</button>
+        <button type="button" data-view-target="report">报告</button>
       </nav>
     </header>
 
     <main id="top">
-      <section class="hero-section" aria-labelledby="hero-title">
+      <section class="hero-section view-section page-shell active" id="home" aria-labelledby="hero-title">
         <div class="hero-copy">
           <p class="eyebrow">本科生大厂实习面试训练</p>
           <h1 id="hero-title">根据你的简历和岗位，生成一场更像真实面试的 AI 对练。</h1>
@@ -36,8 +38,8 @@
             先聚焦后端、前端、数据分析、算法和产品实习。现在已支持岗位通用 JD、浏览器 OCR/PDF 提取、语音转写入口和后端大模型 API 代理。
           </p>
           <div class="hero-actions">
-            <a class="button primary" href="#setup">开始生成题库</a>
-            <a class="button ghost" href="#interview">直接体验模拟</a>
+            <button class="button primary" type="button" data-view-target="setup">开始生成题库</button>
+            <button class="button ghost" type="button" data-view-target="interview">直接体验模拟</button>
           </div>
         </div>
         <div class="hero-panel" aria-label="产品能力概览">
@@ -79,7 +81,7 @@
         </div>
       </section>
 
-      <section id="setup" class="section setup-section" aria-labelledby="setup-title">
+      <section id="setup" class="section setup-section view-section page-shell" aria-labelledby="setup-title" hidden>
         <div class="section-heading">
           <p class="eyebrow">Step 1</p>
           <h2 id="setup-title">建立你的面试上下文</h2>
@@ -172,7 +174,7 @@
         </div>
       </section>
 
-      <section class="section" id="diagnosis" aria-labelledby="diagnosis-title">
+      <section class="section view-section page-shell" id="diagnosis" aria-labelledby="diagnosis-title" hidden>
         <div class="section-heading compact">
           <p class="eyebrow">Step 2</p>
           <h2 id="diagnosis-title">岗位匹配诊断</h2>
@@ -200,7 +202,7 @@
         </div>
       </section>
 
-      <section class="section" id="questions" aria-labelledby="questions-title">
+      <section class="section view-section page-shell" id="questions" aria-labelledby="questions-title" hidden>
         <div class="section-heading compact">
           <p class="eyebrow">Step 3</p>
           <h2 id="questions-title">个性化面试题库</h2>
@@ -241,7 +243,7 @@
         </div>
       </section>
 
-      <section class="section" id="interview" aria-labelledby="interview-title">
+      <section class="section view-section page-shell" id="interview" aria-labelledby="interview-title" hidden>
         <div class="section-heading compact">
           <p class="eyebrow">Step 4</p>
           <h2 id="interview-title">真实模拟面试</h2>
@@ -260,6 +262,7 @@
                 <option value="产品/数据面">产品/数据面</option>
               </select>
             </label>
+            <p class="inline-note" id="interviewTypeHint">系统会根据岗位方向自动推荐面试类型，你也可以手动切换。</p>
             <label class="field">
               <span>模拟长度</span>
               <select id="interviewLength">
@@ -273,6 +276,24 @@
           </aside>
 
           <article class="panel interview-room">
+            <div class="meeting-stage" id="meetingStage">
+              <div class="meeting-main-tile">
+                <div class="interviewer-avatar" aria-hidden="true">陈</div>
+                <div class="meeting-nameplate">
+                  <strong id="interviewerName">陈面试官</strong>
+                  <span id="interviewerTitle">技术面试官 · 等待接入</span>
+                </div>
+                <div class="call-status" id="callStatus">等待开始</div>
+              </div>
+              <div class="candidate-tile">
+                <span>候选人</span>
+                <strong>你</strong>
+              </div>
+              <div class="meeting-side-note">
+                <span>当前关注</span>
+                <strong id="meetingFocus">项目深挖 / 岗位匹配 / 追问承压</strong>
+              </div>
+            </div>
             <div class="room-header">
               <div>
                 <h3 id="roomTitle">等待开始</h3>
@@ -294,7 +315,7 @@
         </div>
       </section>
 
-      <section class="section" id="report" aria-labelledby="report-title">
+      <section class="section view-section page-shell" id="report" aria-labelledby="report-title" hidden>
         <div class="section-heading compact">
           <p class="eyebrow">Step 5</p>
           <h2 id="report-title">面试报告</h2>
@@ -319,8 +340,6 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <script src="./app.js"></script>
+    <script src="./app.js?v=20260510-routefix"></script>
   </body>
 </html>

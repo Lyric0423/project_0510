@@ -10,9 +10,16 @@ const {
 
 const rootDir = __dirname;
 const port = Number(process.env.PORT || 5173);
-const llmApiKey = process.env.LLM_API_KEY || process.env.DASHSCOPE_API_KEY || process.env.OPENAI_API_KEY || "";
-const llmBaseUrl = (process.env.LLM_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
-const llmModel = process.env.LLM_MODEL || "qwen-plus";
+const secretRoot = process.env.SECRET_ROOT || "/Users/lyric/key";
+const llmApiKey =
+  process.env.LLM_API_KEY ||
+  process.env.DEEPSEEK_API_KEY ||
+  readSecret(process.env.DEEPSEEK_API_KEY_FILE || path.join(secretRoot, "api-key")) ||
+  readSecret(path.join(secretRoot, "deepseek_api_key")) ||
+  "";
+const llmBaseUrl = (process.env.LLM_BASE_URL || process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/$/, "");
+const llmModel = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-chat";
+const voiceAppKey = process.env.ALIYUN_VOICE_APPKEY || readSecret(process.env.ALIYUN_VOICE_APPKEY_FILE || path.join(secretRoot, "aliyun_voice_appkey")) || "";
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -36,19 +43,28 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         service: "mianshicang-ai",
         llmConfigured: Boolean(llmApiKey),
+        voiceConfigured: Boolean(voiceAppKey),
         model: llmModel,
         baseUrl: llmBaseUrl,
       });
     }
 
     if (req.method === "POST" && url.pathname === "/api/ai/task") {
-      return handleAiTask(req, res);
+      return await handleAiTask(req, res);
     }
 
     if (req.method === "POST" && url.pathname === "/api/asr/transcribe") {
       return sendJson(res, 501, {
         ok: false,
         error: "ASR endpoint is reserved. Use browser Web Speech in MVP, or connect Aliyun NLS/FunASR later.",
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/voice/config") {
+      return sendJson(res, 200, {
+        ok: true,
+        provider: voiceAppKey ? "aliyun-nls" : "browser-speech-synthesis",
+        configured: Boolean(voiceAppKey),
       });
     }
 
@@ -66,10 +82,16 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, "0.0.0.0", () => {
   console.log(`Mianshicang MVP server is running at http://0.0.0.0:${port}`);
   console.log(`LLM model: ${llmModel}; configured: ${Boolean(llmApiKey)}`);
+  console.log(`Voice provider configured: ${Boolean(voiceAppKey)}`);
 });
 
 async function handleAiTask(req, res) {
-  const body = await readJson(req);
+  let body;
+  try {
+    body = await readJson(req);
+  } catch {
+    return sendJson(res, 400, { ok: false, error: "Invalid JSON request body" });
+  }
   const task = body.task;
   const payload = body.payload || {};
 
@@ -157,7 +179,7 @@ function serveStatic(urlPath, req, res) {
     const ext = path.extname(filePath).toLowerCase();
     res.writeHead(200, {
       "Content-Type": mimeTypes[ext] || "application/octet-stream",
-      "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=604800",
+      "Cache-Control": [".html", ".css", ".js"].includes(ext) ? "no-cache" : "public, max-age=604800",
     });
 
     if (req.method === "HEAD") return res.end();
@@ -189,4 +211,21 @@ function readJson(req) {
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload));
+}
+
+function readSecret(filePath) {
+  if (!filePath) return "";
+  try {
+    const raw = fs.readFileSync(filePath, "utf8").trim();
+    if (!raw) return "";
+    const keyValueLine = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line && !line.startsWith("#"));
+    if (!keyValueLine) return "";
+    const match = keyValueLine.match(/^(?:DEEPSEEK_API_KEY|LLM_API_KEY|API_KEY|ALIYUN_VOICE_APPKEY)\s*=\s*(.+)$/);
+    return (match ? match[1] : keyValueLine).replace(/^["']|["']$/g, "").trim();
+  } catch {
+    return "";
+  }
 }
