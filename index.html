@@ -8,7 +8,7 @@
       name="description"
       content="面向本科生的大厂实习 AI 模拟面试官，支持简历解析、JD 分析、个性化题库、模拟面试与复盘报告。"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260510-interview-ui" />
+    <link rel="stylesheet" href="./styles.css?v=20260510-nls-workbench" />
   </head>
   <body>
     <header class="topbar">
@@ -251,35 +251,36 @@
         </div>
 
         <div class="interview-shell">
-          <aside class="panel interview-settings">
-            <h3>面试设置</h3>
-            <label class="field">
-              <span>面试类型</span>
-              <select id="interviewType">
-                <option value="技术/业务面">技术/业务面</option>
-                <option value="HR面">HR 面</option>
-                <option value="压力面">压力面</option>
-                <option value="产品/数据面">产品/数据面</option>
-              </select>
-            </label>
-            <p class="inline-note" id="interviewTypeHint">系统会根据岗位方向自动推荐面试类型，你也可以手动切换。</p>
-            <label class="field">
-              <span>模拟长度</span>
-              <select id="interviewLength">
-                <option value="quick">快速模拟 5-7 题</option>
-                <option value="standard" selected>标准模拟 8-12 题</option>
-              </select>
-            </label>
-            <button class="button primary" id="startInterviewBtn" type="button">开始模拟</button>
-            <p class="muted">模拟过程中每次只回答当前问题。回答越具体，追问越贴近真实面试。</p>
-          </aside>
-
           <article class="panel interview-room">
+            <div class="interview-control-strip">
+              <label class="field compact-field">
+                <span>面试类型</span>
+                <select id="interviewType">
+                  <option value="技术/业务面">技术/业务面</option>
+                  <option value="HR面">HR 面</option>
+                  <option value="压力面">压力面</option>
+                  <option value="产品/数据面">产品/数据面</option>
+                </select>
+              </label>
+              <label class="field compact-field">
+                <span>模拟长度</span>
+                <select id="interviewLength">
+                  <option value="quick">快速模拟 5-7 题</option>
+                  <option value="standard" selected>标准模拟 8-12 题</option>
+                </select>
+              </label>
+              <button class="button primary" id="startInterviewBtn" type="button">开始模拟</button>
+              <div class="interview-live-status">
+                <span><span class="live-dot"></span><span id="callStatus">等待开始</span></span>
+                <button class="button secondary" id="finishInterviewBtn" type="button">结束面试</button>
+              </div>
+            </div>
+            <p class="inline-note interview-type-hint" id="interviewTypeHint">系统会根据岗位方向自动推荐面试类型，你也可以手动切换。</p>
             <div class="meeting-stage" id="meetingStage">
               <header class="meeting-topbar">
                 <div>
                   <h3 id="roomTitle">AI 模拟面试</h3>
-                  <span><span class="live-dot"></span><span id="callStatus">等待开始</span></span>
+                  <span>每次只回答当前一题，系统会保留完整面试记录。</span>
                 </div>
                 <div class="meeting-timer">
                   <strong id="roomProgress">0 / 0</strong>
@@ -289,7 +290,7 @@
 
               <div class="interview-workbench">
                 <section class="interviewer-video-card" aria-label="AI 面试官画面">
-                  <img class="interviewer-photo" src="./assets/interview-room-reference.png" alt="AI 面试官陈面试官" />
+                  <img class="interviewer-photo" src="./assets/woman.png" alt="AI 面试官陈面试官" />
                   <div class="interviewer-photo-overlay"></div>
                   <span class="incoming-pill">来电中...</span>
                   <div class="meeting-nameplate">
@@ -327,6 +328,10 @@
                       <h4>当前问题</h4>
                       <p id="sideCurrentQuestion">点击开始模拟后，AI 面试官会在这里展示当前问题。</p>
                       <small id="meetingFocus">项目深挖 / 岗位匹配 / 追问承压</small>
+                    </div>
+                    <div class="side-card conversation-card">
+                      <h4>最近对话</h4>
+                      <div class="chat-timeline" id="chatTimeline" aria-live="polite"></div>
                     </div>
                   </div>
                   <div class="side-panel-body" id="notesPanel" hidden>
@@ -391,10 +396,6 @@
                     <span>设</span>
                     <strong>设置</strong>
                   </button>
-                  <button class="control-button danger" id="finishInterviewBtn" type="button">
-                    <span>停</span>
-                    <strong>结束面试</strong>
-                  </button>
                 </div>
                 <div class="answer-dock">
                   <div class="answer-dock-header">
@@ -406,7 +407,6 @@
                 </div>
               </footer>
             </div>
-            <div class="chat-timeline" id="chatTimeline" aria-live="polite"></div>
           </article>
         </div>
       </section>
@@ -416,6 +416,10 @@
           <p class="eyebrow">Step 5</p>
           <h2 id="report-title">面试报告</h2>
           <p>报告会拆分内容短板、表达短板和知识短板，并给出下一轮训练路径。</p>
+          <div class="report-actions" aria-label="报告导出">
+            <button class="button ghost" id="exportDocxBtn" type="button">导出 DOCX</button>
+            <button class="button primary" id="exportPdfBtn" type="button">导出 PDF</button>
+          </div>
         </div>
 
         <div class="report-layout">
@@ -436,6 +440,6 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script src="./app.js?v=20260510-interview-ui"></script>
+    <script src="./app.js?v=20260510-nls-workbench"></script>
   </body>
 </html>

@@ -1355,6 +1355,13 @@ textarea:focus {
   align-items: start;
 }
 
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
 .report-card {
   min-height: 340px;
 }
@@ -1563,5 +1570,262 @@ textarea:focus {
 
   .message {
     max-width: 94%;
+  }
+}
+
+/* Version four interview workbench refinement */
+.interview-shell {
+  display: block;
+}
+
+.interview-room {
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+  padding: 14px;
+  border-color: rgba(210, 218, 230, 0.9);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(246, 248, 252, 0.94));
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.interview-control-strip {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(190px, 240px) auto minmax(220px, 1fr);
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid rgba(218, 225, 235, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.interview-control-strip .field {
+  margin: 0;
+}
+
+.interview-live-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 48px;
+}
+
+.interview-live-status > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #475569;
+  font-weight: 800;
+}
+
+.interview-type-hint {
+  margin: 0 4px;
+}
+
+.meeting-stage {
+  height: clamp(620px, calc(100vh - 270px), 760px);
+  min-height: 0;
+  margin: 0;
+  padding: 10px;
+  border-color: rgba(215, 222, 235, 0.95);
+  background: #f4f7fb;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.meeting-topbar {
+  min-height: 50px;
+  border: 1px solid rgba(220, 226, 236, 0.85);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(10px);
+}
+
+.meeting-topbar h3 {
+  font-size: 18px;
+}
+
+.interview-workbench {
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 370px);
+}
+
+.interviewer-video-card {
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #101827;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.12);
+}
+
+.interviewer-photo {
+  object-fit: cover;
+  object-position: center 30%;
+  transform: scale(1.01);
+}
+
+.interviewer-photo-overlay {
+  background:
+    linear-gradient(180deg, rgba(11, 18, 32, 0.02), rgba(11, 18, 32, 0.3)),
+    linear-gradient(90deg, rgba(11, 18, 32, 0.2), transparent 44%, rgba(11, 18, 32, 0.12));
+}
+
+.incoming-pill,
+.meeting-nameplate {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(14px);
+}
+
+.candidate-tile {
+  border-width: 1px;
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(248, 250, 252, 0.9);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+}
+
+.meeting-side-panel {
+  gap: 10px;
+  border: 1px solid rgba(218, 225, 235, 0.95);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.07);
+}
+
+.side-tabs {
+  padding: 3px;
+  border: 1px solid rgba(220, 226, 236, 0.86);
+  border-radius: 8px;
+  background: #f1f5f9;
+}
+
+.side-tabs button {
+  min-height: 36px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.side-tabs button.active {
+  background: #fff;
+  color: #0f766e;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.side-card {
+  border-color: rgba(220, 226, 236, 0.92);
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+.current-question-card p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  font-size: 15px;
+}
+
+.conversation-card {
+  min-height: 150px;
+}
+
+.conversation-card .chat-timeline {
+  min-height: 112px;
+  max-height: 168px;
+  margin-top: 10px;
+  padding: 0;
+  background: transparent;
+}
+
+.conversation-card .message {
+  max-width: 100%;
+  padding: 9px 10px;
+  font-size: 13px;
+}
+
+.meeting-bottom-bar {
+  grid-template-columns: auto minmax(0, 1fr);
+  border: 1px solid rgba(220, 226, 236, 0.88);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.meeting-control-bar {
+  justify-content: flex-start;
+}
+
+.control-button {
+  min-width: 62px;
+  border: 1px solid rgba(220, 226, 236, 0.88);
+  background: #fff;
+  box-shadow: none;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.control-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(15, 118, 110, 0.34);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+.answer-dock textarea {
+  min-height: 78px;
+  border-color: rgba(203, 213, 225, 0.96);
+  background: #fff;
+}
+
+.answer-dock .button {
+  min-width: 118px;
+  align-self: stretch;
+}
+
+@media (max-width: 1120px) {
+  .interview-control-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interview-live-status {
+    justify-content: space-between;
+  }
+
+  .interview-workbench,
+  .meeting-bottom-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .meeting-stage {
+    height: auto;
+    min-height: 720px;
+  }
+}
+
+@media (max-width: 720px) {
+  .interview-control-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .interview-live-status {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .meeting-stage {
+    min-height: 0;
+  }
+
+  .interviewer-video-card {
+    min-height: 420px;
+  }
+
+  .candidate-tile {
+    width: min(170px, 44%);
+  }
+
+  .meeting-control-bar {
+    overflow-x: auto;
+    justify-content: flex-start;
+    padding-bottom: 4px;
+  }
+
+  .answer-dock {
+    grid-template-columns: 1fr;
+  }
+
+  .answer-dock .button {
+    min-height: 48px;
   }
 }

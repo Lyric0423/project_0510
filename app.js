@@ -66,6 +66,7 @@ const state = {
   interviewNotes: [],
   history: [],
   voiceConfig: null,
+  currentReport: null,
 };
 
 const storageKey = "mianshicang_mvp_history";
@@ -74,7 +75,7 @@ const validViews = new Set(["home", "setup", "diagnosis", "questions", "intervie
 const pdfJsUrl = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 const pdfWorkerUrl = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 const tesseractUrl = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
-let activeRecorder = null;
+let activeVoiceSession = null;
 let activeRecognition = null;
 let activeRecognitionSession = null;
 let toastTimer = null;
@@ -160,6 +161,8 @@ function bindEvents() {
   $$("[data-side-tab]").forEach((button) => {
     button.addEventListener("click", () => activateSidePanel(button.dataset.sideTab));
   });
+  $("#exportDocxBtn").addEventListener("click", () => exportReportFile("docx"));
+  $("#exportPdfBtn").addEventListener("click", () => exportReportFile("pdf"));
   $("#clearHistoryBtn").addEventListener("click", clearHistory);
 }
 
@@ -1005,6 +1008,7 @@ async function startInterview() {
     currentQuestion: null,
     questionCount: 0,
     followUps: 0,
+    finalQuestionAsked: false,
   };
   state.interviewNotes = [];
 
@@ -1090,6 +1094,7 @@ function fallbackQuestion() {
 }
 
 function addInterviewerQuestion(question, isFollowUp = false) {
+  resetCurrentAnswerForNewQuestion();
   state.interview.currentQuestion = { ...question, isFollowUp };
   state.interview.questionCount += 1;
   appendMessage("interviewer", isFollowUp ? "追问" : state.interview.type, question.text);
@@ -1104,6 +1109,9 @@ function appendMessage(kind, label, text) {
   message.className = `message ${kind}`;
   message.innerHTML = `<small>${escapeHTML(label)}</small>${escapeHTML(text)}`;
   timeline.appendChild(message);
+  while (timeline.children.length > 8) {
+    timeline.removeChild(timeline.firstElementChild);
+  }
   timeline.scrollTop = timeline.scrollHeight;
 }
 
@@ -1129,6 +1137,11 @@ async function submitInterviewAnswer() {
   });
   $("#interviewAnswer").value = "";
 
+  if (interview.currentQuestion.isFinalQuestion) {
+    await finishInterview({ completion: true });
+    return;
+  }
+
   const autoFollow = $("#autoFollowToggle")?.checked !== false;
   const needsFollowUp = autoFollow && shouldAskFollowUp(answer, feedback, interview);
   if (needsFollowUp) {
@@ -1145,8 +1158,8 @@ async function submitInterviewAnswer() {
     return;
   }
 
-  if (interview.questionCount >= interview.maxQuestions || interview.queue.length === 0) {
-    await finishInterview();
+  if (shouldAskFinalQuestion(interview)) {
+    addInterviewerQuestion(buildFinalQuestion());
     return;
   }
 
@@ -1157,12 +1170,35 @@ async function submitInterviewAnswer() {
 function shouldAskFollowUp(answer, feedback, interview) {
   if (interview.followUps >= 4) return false;
   if (interview.currentQuestion.isFollowUp) return false;
-  if (interview.questionCount >= interview.maxQuestions) return false;
+  if (interview.questionCount >= interview.maxQuestions - 1) return false;
+  if (interview.finalQuestionAsked) return false;
   const answerTooShort = answer.length < 90;
   const lowScore = feedback.score < 72;
   const missingMetric = feedback.suggestions.some((item) => item.includes("量化"));
   const missingContribution = feedback.suggestions.some((item) => item.includes("个人贡献"));
   return answerTooShort || lowScore || missingMetric || missingContribution;
+}
+
+function shouldAskFinalQuestion(interview) {
+  return !interview.finalQuestionAsked && (interview.questionCount >= interview.maxQuestions - 1 || interview.queue.length === 0);
+}
+
+function buildFinalQuestion() {
+  if (state.interview) state.interview.finalQuestionAsked = true;
+  return {
+    id: `final-q-${Date.now()}`,
+    level: "基础",
+    type: "反问环节",
+    role: "HR面",
+    text: "你有什么想问我们的？",
+    intent: "考察候选人对岗位、团队和成长路径的关注点",
+    evidence: "反问",
+    points: ["岗位职责", "团队协作", "成长路径", "业务场景"],
+    pitfalls: ["只问薪资福利", "问题过空", "暴露准备不足"],
+    followUps: ["你为什么关心这个问题？"],
+    duration: "60-90 秒",
+    isFinalQuestion: true,
+  };
 }
 
 function chooseFollowUp(question, answer, suggestions) {
@@ -1237,13 +1273,39 @@ function playRingtone() {
   }
 }
 
+function playCompletionTone() {
+  try {
+    audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+    const now = audioContext.currentTime;
+    [
+      [660, 0],
+      [880, 0.14],
+      [1175, 0.28],
+    ].forEach(([frequency, offset]) => {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(frequency, now + offset);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.12, now + offset + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start(now + offset);
+      oscillator.stop(now + offset + 0.18);
+    });
+  } catch {
+    // Completion sound is enhancement-only.
+  }
+}
+
 async function speakInterviewerText(text) {
   if ($("#autoTtsToggle")?.checked === false) return;
   try {
     const response = await fetch("/api/voice/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice: "Cherry" }),
+      body: JSON.stringify({ text, voice: "aixia" }),
     });
     const result = await response.json();
     if (result.ok && result.audioBase64) {
@@ -1410,7 +1472,8 @@ function showInterviewHint() {
   appendMessage("interviewer", "轻提示", `可以按这个结构回答：${interview.currentQuestion.points.join("、")}。不要背模板，尽量使用你的真实经历。`);
 }
 
-async function finishInterview() {
+async function finishInterview(options = {}) {
+  const { completion = false } = options;
   const interview = state.interview;
   if (!interview || !interview.turns.length) {
     showToast("还没有可生成报告的面试记录。");
@@ -1424,7 +1487,13 @@ async function finishInterview() {
   const report = normalizeReport(aiResult?.report, localReport);
   renderReport(report);
   saveReport(report);
-  showToast("报告已生成。");
+  if (completion) {
+    playCompletionTone();
+    showToast("面试报告已经生成。");
+    window.setTimeout(() => window.alert("面试报告已经生成"), 240);
+  } else {
+    showToast("报告已生成。");
+  }
   showView("report");
 }
 
@@ -1513,6 +1582,7 @@ function buildActionPlan(role, suggestions) {
 }
 
 function renderReport(report) {
+  state.currentReport = report;
   const card = $("#reportCard");
   card.innerHTML = `
     <div class="report-summary">
@@ -1572,6 +1642,82 @@ function renderReport(report) {
   `;
 }
 
+async function exportReportFile(type) {
+  const report = state.currentReport;
+  if (!report || !report.turns || !report.turns.length) {
+    showToast("请先生成报告。");
+    return;
+  }
+
+  const label = type === "pdf" ? "PDF" : "DOCX";
+  showToast(`正在导出 ${label} 文件。`);
+
+  try {
+    const response = await fetch(`/api/report/export/${type}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ report }),
+    });
+
+    if (!response.ok) {
+      const message = await readExportError(response);
+      showToast(message || `${label} 导出失败，请稍后重试。`);
+      return;
+    }
+
+    const blob = await response.blob();
+    const filename = getDownloadFilename(response, `面试报告.${type}`);
+    downloadBlob(blob, filename);
+    const fontWarning = response.headers.get("X-PDF-Font-Warning");
+    if (fontWarning) {
+      showToast(decodeURIComponent(fontWarning));
+    } else {
+      showToast(`${label} 已生成并开始下载。`);
+    }
+  } catch (error) {
+    console.error(error);
+    showToast(`${label} 导出失败：服务不可达或网络异常。`);
+  }
+}
+
+async function readExportError(response) {
+  try {
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const result = await response.json();
+      return result.error || "";
+    }
+    return await response.text();
+  } catch {
+    return "";
+  }
+}
+
+function getDownloadFilename(response, fallback) {
+  const disposition = response.headers.get("content-disposition") || "";
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1]);
+    } catch {
+      return fallback;
+    }
+  }
+  const plain = disposition.match(/filename="([^"]+)"/i);
+  return plain?.[1] || fallback;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function saveReport(report) {
   state.history.unshift(report);
   state.history = state.history.slice(0, 8);
@@ -1621,16 +1767,9 @@ function clearHistory() {
 
 async function toggleVoiceInput(textareaSelector, buttonSelector) {
   const button = $(buttonSelector);
-  if (activeRecorder) {
-    activeRecorder.stop();
-    activeRecorder = null;
-    if (activeRecognition) {
-      activeRecognition.stop();
-      activeRecognition = null;
-      activeRecognitionSession = null;
-    }
-    setControlButtonLabel(button, "麦克风");
-    showToast("录音已停止。若浏览器支持语音识别，转写会自动填入回答框。");
+  if (activeVoiceSession) {
+    stopActiveVoiceInput();
+    showToast("录音已停止。");
     return;
   }
 
@@ -1640,25 +1779,148 @@ async function toggleVoiceInput(textareaSelector, buttonSelector) {
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    activeRecorder = new MediaRecorder(stream);
-    activeRecorder.start();
+    activeVoiceSession = await startAliyunVoiceInput(textareaSelector, button);
     setControlButtonLabel(button, "停止录音");
-    showToast("正在录音。");
-    startSpeechRecognition(textareaSelector);
-    activeRecorder.onstop = () => {
-      stream.getTracks().forEach((track) => track.stop());
-    };
-  } catch {
-    showToast("无法获取麦克风权限，请检查浏览器设置或改用文字作答。");
+    showToast("正在使用阿里云语音识别。");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "阿里云语音识别启动失败，请使用文字作答。");
+    stopActiveVoiceInput({ silent: true });
+    startBrowserSpeechFallback(textareaSelector, button);
   }
+}
+
+async function startAliyunVoiceInput(textareaSelector, button) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const socket = await openAsrSocket();
+  const captureContext = new (window.AudioContext || window.webkitAudioContext)();
+  const source = captureContext.createMediaStreamSource(stream);
+  const processor = captureContext.createScriptProcessor(4096, 1, 1);
+  const textarea = $(textareaSelector);
+  const baseText = textarea.value.trim();
+  let finalTranscript = "";
+  let partialTranscript = "";
+
+  const session = {
+    button,
+    socket,
+    stream,
+    processor,
+    source,
+    captureContext,
+    stop() {
+      processor.disconnect();
+      source.disconnect();
+      stream.getTracks().forEach((track) => track.stop());
+      if (captureContext.state !== "closed") captureContext.close();
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "stop" }));
+      } else {
+        socket.close();
+      }
+    },
+  };
+
+  socket.onmessage = (event) => {
+    const payload = parseVoicePayload(event.data);
+    if (!payload) return;
+    if (payload.type === "partial") {
+      partialTranscript = payload.text || "";
+      applyVoiceTranscript(textarea, baseText, finalTranscript, partialTranscript);
+    } else if (payload.type === "final") {
+      finalTranscript = appendTranscript(finalTranscript, payload.text);
+      partialTranscript = "";
+      applyVoiceTranscript(textarea, baseText, finalTranscript, partialTranscript);
+    } else if (payload.type === "error") {
+      showToast(payload.message || "阿里云语音识别失败，请使用文字作答。");
+      stopActiveVoiceInput({ silent: true });
+    }
+  };
+  socket.onclose = () => {
+    if (activeVoiceSession === session) {
+      stopActiveVoiceInput({ silent: true });
+    }
+  };
+  socket.onerror = () => {
+    showToast("阿里云语音识别连接失败，请检查服务端配置。");
+    stopActiveVoiceInput({ silent: true });
+  };
+
+  processor.onaudioprocess = (event) => {
+    if (socket.readyState !== WebSocket.OPEN) return;
+    const input = event.inputBuffer.getChannelData(0);
+    const pcm = encodePcm16(input, captureContext.sampleRate, 16000);
+    if (pcm.byteLength) socket.send(pcm);
+  };
+  source.connect(processor);
+  processor.connect(captureContext.destination);
+  return session;
+}
+
+function openAsrSocket() {
+  return new Promise((resolve, reject) => {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${protocol}//${window.location.host}/api/voice/asr`);
+    socket.binaryType = "arraybuffer";
+    const timer = window.setTimeout(() => {
+      socket.close();
+      reject(new Error("阿里云语音识别连接超时，请检查服务端 NLS 配置。"));
+    }, 8000);
+    socket.onopen = () => {
+      window.clearTimeout(timer);
+      resolve(socket);
+    };
+    socket.onerror = () => {
+      window.clearTimeout(timer);
+      reject(new Error("阿里云语音识别连接失败，请检查服务端 NLS 配置。"));
+    };
+  });
+}
+
+function stopActiveVoiceInput(options = {}) {
+  const { silent = false } = options;
+  const session = activeVoiceSession;
+  activeVoiceSession = null;
+  if (session) {
+    try {
+      session.stop();
+    } catch {
+      // Voice cleanup is best-effort.
+    }
+    setControlButtonLabel(session.button, "麦克风");
+  }
+  if (activeRecognition) {
+    activeRecognition.stop();
+    activeRecognition = null;
+    activeRecognitionSession = null;
+  }
+  if (!silent) showToast("录音已停止。");
+}
+
+function resetCurrentAnswerForNewQuestion() {
+  stopActiveVoiceInput({ silent: true });
+  const answer = $("#interviewAnswer");
+  if (answer) answer.value = "";
+}
+
+function startBrowserSpeechFallback(textareaSelector, button) {
+  const recognition = startSpeechRecognition(textareaSelector);
+  if (!recognition) return;
+  activeVoiceSession = {
+    button,
+    stop() {
+      recognition.stop();
+    },
+  };
+  setControlButtonLabel(button, "停止录音");
+  showToast("阿里云语音识别不可用，已尝试浏览器本地转写。");
 }
 
 function startSpeechRecognition(textareaSelector) {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    showToast("当前浏览器不支持实时语音转写，已仅开启录音占位。");
-    return;
+    showToast("当前浏览器不支持实时语音转写，请使用文字作答。");
+    return null;
   }
 
   const recognition = new SpeechRecognition();
@@ -1684,9 +1946,54 @@ function startSpeechRecognition(textareaSelector) {
   recognition.onend = () => {
     activeRecognition = null;
     activeRecognitionSession = null;
+    if (activeVoiceSession?.stop) {
+      const button = activeVoiceSession.button;
+      activeVoiceSession = null;
+      setControlButtonLabel(button, "麦克风");
+    }
   };
   recognition.start();
   activeRecognition = recognition;
+  return recognition;
+}
+
+function parseVoicePayload(data) {
+  try {
+    return JSON.parse(String(data || ""));
+  } catch {
+    return null;
+  }
+}
+
+function appendTranscript(existing, next) {
+  const cleanNext = String(next || "").trim();
+  if (!cleanNext) return existing;
+  if (existing.endsWith(cleanNext)) return existing;
+  return [existing, cleanNext].filter(Boolean).join("\n");
+}
+
+function applyVoiceTranscript(textarea, baseText, finalTranscript, partialTranscript) {
+  textarea.value = [baseText, finalTranscript, partialTranscript].filter(Boolean).join("\n").trim();
+}
+
+function encodePcm16(input, inputSampleRate, outputSampleRate) {
+  const ratio = inputSampleRate / outputSampleRate;
+  const outputLength = Math.floor(input.length / ratio);
+  const buffer = new ArrayBuffer(outputLength * 2);
+  const view = new DataView(buffer);
+  for (let index = 0; index < outputLength; index += 1) {
+    const start = Math.floor(index * ratio);
+    const end = Math.floor((index + 1) * ratio);
+    let sum = 0;
+    let count = 0;
+    for (let inputIndex = start; inputIndex < end && inputIndex < input.length; inputIndex += 1) {
+      sum += input[inputIndex];
+      count += 1;
+    }
+    const sample = Math.max(-1, Math.min(1, count ? sum / count : input[start] || 0));
+    view.setInt16(index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+  return buffer;
 }
 
 function persistLightState() {

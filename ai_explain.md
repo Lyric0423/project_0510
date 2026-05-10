@@ -2,39 +2,35 @@
 
 ## 1. Key 配置在哪里
 
-真实 key 不要写进代码仓库。本项目在 `server.js` 里读取本机密钥文件或环境变量。
+真实 key 不要写进代码仓库。本项目启动时会先读取本地 `.env`，再读取系统环境变量，`.env` 已被 `.gitignore` 忽略。
 
-- DeepSeek key：`server.js` 第 15-20 行。
-  - 默认读取 `/Users/lyric/key/api-key`。
-  - 也支持环境变量 `LLM_API_KEY`、`DEEPSEEK_API_KEY`、`DEEPSEEK_API_KEY_FILE`。
-- DeepSeek 接口地址和模型：`server.js` 第 21-22 行。
-  - 默认 `https://api.deepseek.com`。
-  - 默认模型 `deepseek-chat`。
-- 阿里云语音 key：`server.js` 第 23-30 行。
-  - 默认读取 `/Users/lyric/key/ali-key`。
-  - 也支持 `DASHSCOPE_API_KEY`、`ALIYUN_API_KEY`、`ALIYUN_VOICE_API_KEY` 等环境变量。
-- 阿里云 TTS 接口和声音：`server.js` 第 31-33 行。
-  - 默认模型 `qwen3-tts-flash`。
-  - 默认声音 `Cherry`。
+- DeepSeek：使用 `DEEPSEEK_API_KEY`，兼容 `LLM_API_KEY`。
+  - 如果 `.env` 没有配置，仍会备用读取 `/Users/lyric/key/api-key`。
+  - 接口地址默认 `https://api.deepseek.com`，模型默认 `deepseek-chat`。
+- 阿里云 NLS：使用 `ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`、`ALIYUN_NLS_APPKEY`。
+  - WebSocket 地址默认 `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1`。
+  - TTS 声音默认 `aixia`。
+- PDF 字体：可选 `PDF_FONT_PATH`，用于服务器没有中文字体时指定字体文件。
 
-如果配置失败，前端会弹出具体提示，例如 DeepSeek 401、未读取到 key、阿里云语音失败等，并自动回退到本地规则或浏览器语音。
+如果配置失败，前端会弹出具体提示，例如 DeepSeek 401、未读取到 key、阿里云 Token 获取失败、语音识别失败等，并自动回退到本地规则、文字输入或浏览器语音。
 
 ## 2. 大模型提示词在哪里
 
 所有核心提示词都在 `prompts.js`：
 
-- 全局系统提示词：`BASE_SYSTEM_PROMPT`，第 1-13 行。
-- 题库生成和岗位诊断：`buildDiagnoseAndQuestionsPrompt`，第 15-52 行。
-- 单题回答反馈：`buildFeedbackPrompt`，第 54-83 行。
-- 模拟面试动态追问：`buildInterviewNextQuestionPrompt`，第 85-120 行。
-- 面试报告补充：`buildReportPrompt`，第 122-153 行。
+- 全局系统提示词：`BASE_SYSTEM_PROMPT`。
+- 题库生成和岗位诊断：`buildDiagnoseAndQuestionsPrompt`。
+- 单题回答反馈：`buildFeedbackPrompt`。
+- 模拟面试动态追问：`buildInterviewNextQuestionPrompt`。
+- 面试报告补充：`buildReportPrompt`。
 
 前端调用入口在 `app.js`：
 
-- 统一 DeepSeek 调用：`callAiTask`，第 545-565 行。
+- 统一 DeepSeek 调用：`callAiTask`。
 - 题库生成：`generateWorkspace` 调用 `diagnoseAndQuestions`。
-- 模拟面试下一题：`requestAiInterviewQuestion`，第 1026-1047 行。
-- 语音合成播放：`speakInterviewerText`，第 1240-1259 行。
+- 模拟面试下一题：`requestAiInterviewQuestion`。
+- 阿里 NLS 语音合成播放：`speakInterviewerText`。
+- 阿里 NLS 语音识别：`toggleVoiceInput` 连接 `/api/voice/asr`。
 
 ## 3. 面经或背景资料应该加在哪里
 
